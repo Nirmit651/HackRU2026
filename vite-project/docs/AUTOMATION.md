@@ -73,6 +73,23 @@ A fresh outside observation must precede arrival; worker startup cannot open mar
 
 Samples are processed in source-time order after the lateness buffer; duplicates do not advance duration. Unseen late or conflicting observations during a visit mark it uncertain. Terminal visits are archived separately from the current vehicle state, and delayed jobs reference the original visit ID. Uncertainty pauses trading; trustworthy confirmed movement closes trading in the same transaction as the state transition. This initial integration has no upstream historical backfill API, so lost coverage stays uncertain and follows the frozen VOID deadline. The UI's elapsed duration is informational, not a settlement clock.
 
+### Scheduled vehicle markets
+
+The supported bus markets are: the existing conservative 10-minute dwell market; **arrival by deadline** for one configured vehicle and stop; and **presence at a target time** for one configured vehicle and stop. Scheduled questions are configured in the existing bus automation settings JSON—there is no public custom-market form. Every item names a specific `vehicleId`; “any LX bus” is intentionally unsupported.
+
+```json
+{
+  "sourceVerifiedLive": true,
+  "sourceSystem": "rubus",
+  "stops": [{"id":"livingston-plaza","name":"Livingston Plaza","latitude":40.5235,"longitude":-74.437,"sourceUrl":"https://verified.example/stops/livingston-plaza"}],
+  "scheduledMarkets": [{"id":"lx-123-livingston-2026-10-11","kind":"arrival_by_deadline","vehicleId":"123","routeId":"LX","stopId":"livingston-plaza","opensAt":"2026-10-11T13:30:00Z","closesAt":"2026-10-11T13:55:00Z","deadline":"2026-10-11T14:00:00Z","voidAfter":"2026-10-11T14:03:00Z"}]
+}
+```
+
+Arrival is YES only when the frozen vehicle/route has a valid source-timestamped position within the frozen entry radius by its deadline. It is NO only after gap-free source-time coverage from opening through that deadline, including a sample at or after it; a gap, stale/conflicting/late sample, route change, disappearance, or insufficient evidence is VOID at `voidAfter`. Presence uses the first qualifying source observation from the target through its frozen 30-second window: inside is YES, outside is NO, and no qualifying, stale, conflicting, or wrong-route observation is VOID. This deliberately reports the deterministic first-observation rule, not unobserved literal physical presence. Dwell retains its existing outside-before-arrival, fixed-anchor, fresh-sample, 10-minute YES / confirmed-early-departure NO / uncertainty-VOID rules.
+
+The collector must run continuously enough to meet the frozen coverage limits. Settlement reads only persisted, valid `vehicle_position` rows with `measurement_time_basis='source'` and `source_measured_at`; map data and retrieval timestamps never settle markets. The current collector source is not automatically an authoritative Rutgers production source, so admins must independently verify it before setting `sourceVerifiedLive`.
+
 ## Retention
 
 Run `prisma/automation-retention.sql` daily with the migration-owner role. It prunes seven-day transient caches and settled visit/weather traces, keeps all observations needed by unsettled markets, and keeps 30 days of generator runs. Ledger, events, evidence and receipts are never pruned. DONE job identities and proposed receipts remain for deduplication. The immutable settlement receipt contains the bounded trace/hourly evidence before pruning. Tiger outages do not affect authoritative bus/weather evidence. Raw upstream bus-history retention remains the teammate's responsibility.

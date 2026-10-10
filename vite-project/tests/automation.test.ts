@@ -6,6 +6,7 @@ import {
   emptyVisit,
   type Telemetry,
 } from "../server/automation/bus-state";
+import { evaluateScheduledMarket } from "../server/automation/bus";
 import { normalizeEspnGame, normalizeGame } from "../server/automation/providers";
 import { sportsResult, seasons } from "../server/automation/sports";
 const s = settingsSchema.parse({
@@ -125,6 +126,42 @@ describe("continuous observed bus visits", () => {
     v = advanceVisit(v, sample(110, 0.0003), s, new Date(base + 110000));
     v = advanceVisit(v, sample(120), s, new Date(base + 120000));
     expect(v.state).toBe("UNCERTAIN");
+  });
+});
+describe("scheduled bus markets", () => {
+  const opensAt = "2026-10-10T16:00:00.000Z";
+  const deadline = "2026-10-10T16:02:00.000Z";
+  const scheduled = { kind: "arrival_by_deadline" as const, routeId: "LX", stop: { latitude: 40.5, longitude: -74.4 }, opensAt, deadline };
+  const settings = { enterMeters: 50, maxGapSeconds: 60, latenessSeconds: 10 };
+  it("validates scheduled IDs, timing, and verified stop references", () => {
+    expect(() => settingsSchema.parse({
+      stops: [],
+      scheduledMarkets: [{ id: "lx", kind: "arrival_by_deadline", vehicleId: "123", routeId: "LX", stopId: "missing", opensAt, closesAt: "2026-10-10T16:01:00.000Z", deadline, voidAfter: "2026-10-10T16:03:00.000Z" }],
+    })).toThrow();
+  });
+  it("settles arrival YES only when the frozen vehicle enters before deadline", () => {
+    const result = evaluateScheduledMarket(scheduled, [sample(30)], settings);
+    expect(result).toMatchObject({ result: true });
+  });
+  it("settles arrival NO only with continuous source-time coverage", () => {
+    const outside = (sec: number) => sample(sec, 0.001);
+    const result = evaluateScheduledMarket(scheduled, [outside(0), outside(60), outside(120)], settings);
+    expect(result).toMatchObject({ result: false });
+    expect(evaluateScheduledMarket(scheduled, [outside(0), outside(120)], settings)).toBeNull();
+  });
+  it("keeps gaps, stale rows, route changes, and conflicts from proving NO", () => {
+    const outside = (sec: number) => sample(sec, 0.001);
+    expect(evaluateScheduledMarket(scheduled, [{ ...outside(0), receivedAt: sample(20).sourceAt }], settings)).toMatchObject({ void: "STALE_SOURCE_OBSERVATION" });
+    expect(evaluateScheduledMarket(scheduled, [{ ...outside(0), routeId: "A" }], settings)).toMatchObject({ void: "ROUTE_IDENTITY_CHANGED" });
+    expect(evaluateScheduledMarket(scheduled, [outside(0), { ...outside(0), latitude: 40.6 }], settings)).toMatchObject({ void: "CONFLICTING_SOURCE_OBSERVATION" });
+  });
+  it("uses the first qualifying post-target observation for presence", () => {
+    const targetTime = deadline;
+    const market = { ...scheduled, kind: "presence_at_time" as const, targetTime };
+    const inside = sample(120), outside = sample(125, 0.001);
+    expect(evaluateScheduledMarket(market, [inside, outside], settings)).toMatchObject({ result: true });
+    expect(evaluateScheduledMarket(market, [outside], settings)).toMatchObject({ result: false });
+    expect(evaluateScheduledMarket(market, [sample(151)], settings)).toBeNull();
   });
 });
 describe("documented sports schemas", () => {

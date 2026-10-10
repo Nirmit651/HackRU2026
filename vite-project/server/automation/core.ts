@@ -9,6 +9,33 @@ import type { Market } from "../../generated/prisma/client";
 
 export const zone = "America/New_York";
 export const types = ["temperature", "football", "basketball", "bus"] as const;
+const scheduledMarketSchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    kind: z.enum(["arrival_by_deadline", "presence_at_time"]),
+    vehicleId: z.string().min(1).max(100),
+    routeId: z.string().min(1).max(50),
+    stopId: z.string().min(1).max(100),
+    opensAt: z.iso.datetime(),
+    closesAt: z.iso.datetime(),
+    targetTime: z.iso.datetime().optional(),
+    deadline: z.iso.datetime().optional(),
+    voidAfter: z.iso.datetime(),
+  })
+  .superRefine((m, ctx) => {
+    const opens = +new Date(m.opensAt), closes = +new Date(m.closesAt);
+    const decision = +(new Date(m.targetTime ?? m.deadline ?? 0));
+    if (!(opens < closes && closes <= decision && decision < +new Date(m.voidAfter)))
+      ctx.addIssue({ code: "custom", message: "Scheduled market times are not ordered" });
+    if (m.kind === "arrival_by_deadline" && !m.deadline)
+      ctx.addIssue({ code: "custom", message: "Arrival markets require deadline" });
+    if (m.kind === "arrival_by_deadline" && m.targetTime)
+      ctx.addIssue({ code: "custom", message: "Arrival markets do not accept targetTime" });
+    if (m.kind === "presence_at_time" && !m.targetTime)
+      ctx.addIssue({ code: "custom", message: "Presence markets require targetTime" });
+    if (m.kind === "presence_at_time" && m.deadline)
+      ctx.addIssue({ code: "custom", message: "Presence markets do not accept deadline" });
+  });
 export const settingsSchema = z
   .object({
     station: z
@@ -62,11 +89,23 @@ export const settingsSchema = z
       )
       .max(200)
       .default([]),
+    scheduledMarkets: z.array(scheduledMarketSchema).max(100).default([]),
   })
-  .refine(
-    (s) => s.exitMeters > s.enterMeters,
-    "Exit radius must exceed enter radius",
-  );
+  .superRefine((s, ctx) => {
+    if (s.exitMeters <= s.enterMeters)
+      ctx.addIssue({ code: "custom", message: "Exit radius must exceed enter radius" });
+    const ids = new Set<string>();
+    for (const market of s.scheduledMarkets) {
+      if (ids.has(market.id))
+        ctx.addIssue({ code: "custom", message: "Scheduled market IDs must be unique" });
+      ids.add(market.id);
+      if (!s.stops.some((stop) => stop.id === market.stopId))
+        ctx.addIssue({
+          code: "custom",
+          message: `Scheduled market ${market.id} references an unconfigured stop`,
+        });
+    }
+  });
 export type Settings = z.infer<typeof settingsSchema>;
 export const iso = (at: Date | number) => new Date(at).toISOString();
 export const add = (at: Date, seconds: number) =>
