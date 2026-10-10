@@ -7,7 +7,7 @@ import {
   createSeriesMarkers,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { request, supabase, date } from "./api";
+import { request, supabase, date, dollars } from "./api";
 import type { History, PublicEvent, PublicMarket } from "../shared/contracts";
 import { EventBuffer, collapseEvents } from "../shared/recovery";
 export function MarketChart({
@@ -100,8 +100,7 @@ export function MarketChart({
       setRecent(
         all
           .filter((e) => e.kind === "PRICE_CHANGED")
-          .slice(-5)
-          .reverse(),
+          .slice(-4),
       );
       if (full) {
         price.setData(
@@ -251,6 +250,16 @@ export function MarketChart({
         className="chart"
         aria-label="Market-implied YES probability and traded volume"
       />
+      {recent.length > 0 && <div className="chart-trade-stack" aria-live="polite">
+        {recent.map((e) => <div className="chart-trade-line" key={e.id}>
+          <strong>{String(e.payload.trader ?? "Anonymous")}</strong>
+          <span>{String(e.payload.action ?? "BUY").toLowerCase()} {String(e.payload.quantity)} {String(e.payload.side)}</span>
+        </div>)}
+      </div>}
+      {recent.at(-1) && <div className="chart-last-trade" aria-live="polite">
+        <span>{String(recent.at(-1)?.payload.trader ?? "Anonymous")}</span>
+        <strong>{String(recent.at(-1)?.payload.side)} · {dollars(recent.at(-1)!.tradeAmountMicros)}</strong>
+      </div>}
       <div className="chart-credit">
         <span>{source} · America/New_York</span>
         <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">

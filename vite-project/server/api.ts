@@ -190,7 +190,12 @@ app.get("/api/markets/:id", async (req, res) => {
   ensure(market, "NOT_FOUND", 404);
   res.json({ ...market, asOf: new Date() });
 });
-app.get("/api/presentation/:marketId", async (req, res) => res.json(await presentationStatus(id(req.params.marketId))));
+app.get("/api/presentation/:marketId", async (req, res) => {
+  const run = await presentationStatus(id(req.params.marketId));
+  // The worker is authoritative in long-running deployments; this tick keeps
+  // a serverless presentation vivid while its detail page is open.
+  res.json(run.status === "RUNNING" ? await tickPresentationRun(run.id) : run);
+});
 app.post("/api/presentation/create", async (req, res) => { demoAdmin(req); res.json(await createPresentationDemo()); });
 app.post("/api/presentation/:marketId/start", async (req, res) => { demoAdmin(req); res.json(await startPresentation(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/finish", async (req, res) => { demoAdmin(req); res.json(await finishPresentation(id(req.params.marketId))); });
@@ -202,11 +207,13 @@ app.post("/api/presentation/:marketId/bots", async (req, res) => {
   ensure(run.status === "RUNNING" || status === "RUNNING", "PRESENTATION_NOT_ACTIVE", 409);
   res.json(await db.presentationDemoRun.update({ where: { id: run.id }, data: { status } }));
 });
-app.post("/api/presentation/tick", async (req, res) => {
+const presentationTick = async (req: express.Request, res: express.Response) => {
   const token = req.headers.authorization?.replace(/^Bearer /, "");
-  ensure(token && token === process.env.PRESENTATION_RUNNER_TOKEN, "UNAUTHORIZED", 401);
+  ensure(token && (token === process.env.PRESENTATION_RUNNER_TOKEN || token === process.env.CRON_SECRET), "UNAUTHORIZED", 401);
   await tickPresentationRuns(); res.json({ ok: true });
-});
+};
+app.post("/api/presentation/tick", presentationTick);
+app.get("/api/presentation/tick", presentationTick);
 app.get("/api/markets/:id/history", async (req, res) =>
   res.json(
     await history(

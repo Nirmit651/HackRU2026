@@ -694,14 +694,15 @@ function PresentationPanel({ market, admin, onRefresh }: { market: PublicMarket;
   const elapsed = run?.startedAt ? Math.min(60, Math.max(0, (nowMs - Date.parse(run.startedAt)) / 1000)) : 0;
   const remaining = Math.max(0, 60 - elapsed);
   const timer = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${(elapsed % 60).toFixed(1).padStart(4, "0")}`;
-  async function control(path: string, body?: unknown) { try { await request(path, body); await load(); onRefresh(); } catch (e) { setError((e as Error).message); } }
+  const deadlinePassed = !!run?.deadlineAt && nowMs >= Date.parse(run.deadlineAt);
+  async function control(path: string, body?: unknown) { try { await request(path, body ?? {}, "POST"); await load(); onRefresh(); } catch (e) { setError((e as Error).message); } }
   return <section className="presentation-panel">
     <span className="eyebrow">PRESENTATION DEMO MARKET</span>
-    {run?.status === "RUNNING" ? <><strong className="presentation-timer">{timer}</strong><p>{remaining.toFixed(1)} seconds until YES</p></> : run?.outcome ? <><strong className="presentation-outcome">Outcome: {run.outcome}</strong><p>Timer settled from the server-authoritative clock.</p></> : <><strong className="presentation-ready">Timer ready</strong><p>Trading opens when the sixty-second timer begins.</p></>}
+    {run?.status === "RUNNING" ? <><strong className="presentation-timer">{timer}</strong><p>{remaining.toFixed(1)} seconds until NO</p></> : run?.outcome ? <><strong className="presentation-outcome">Outcome: {run.outcome}</strong><p>Timer settled from the server-authoritative clock.</p></> : <><strong className="presentation-ready">Timer ready</strong><p>Trading opens when the sixty-second timer begins.</p></>}
     {run && <p className="presentation-stats">{run.botTradeCount} bot trades · {dollars(run.botVolumeMicros)} simulated volume · {run.botCount} active bots</p>}
     {admin && <div className="presentation-controls">
       {run?.status === "READY" && <button className="solid" onClick={() => control(`/presentation/${market.id}/start`)}>Start presentation market</button>}
-      {run?.status === "RUNNING" && <><button className="solid danger" onClick={() => control(`/presentation/${market.id}/finish`)}>Finish presentation</button><button className="outline" onClick={() => control(`/presentation/${market.id}/whale`)}>Trigger whale trade</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "PAUSED" })}>Pause bots</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "STOPPED" })}>Stop bots</button></>}
+      {run?.status === "RUNNING" && <><button className="solid danger" disabled={deadlinePassed} onClick={() => control(`/presentation/${market.id}/finish`)}>{deadlinePassed ? "Timer expired" : "Finish presentation"}</button><button className="outline" onClick={() => control(`/presentation/${market.id}/whale`)}>Trigger whale trade</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "PAUSED" })}>Pause bots</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "STOPPED" })}>Stop bots</button></>}
       {run?.status === "PAUSED" && <button className="solid" onClick={() => control(`/presentation/${market.id}/bots`, { status: "RUNNING" })}>Resume bots</button>}
       {run?.status === "STOPPED" && <button className="solid" onClick={() => control(`/presentation/${market.id}/bots`, { status: "RUNNING" })}>Restart bots</button>}
     </div>}

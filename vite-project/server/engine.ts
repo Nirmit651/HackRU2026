@@ -149,7 +149,7 @@ export async function buy(actor: Actor, raw: BuyInput) {
       maxCostMicros: input.maxCostMicros,
     });
   return transaction(async (tx) => {
-    await authorizeActor(tx, actor, input.environmentId);
+    const profile = await authorizeActor(tx, actor, input.environmentId);
     const wallet = await tx.wallet.findUnique({
       where: {
         environmentId_profileId: {
@@ -294,7 +294,8 @@ export async function buy(actor: Actor, raw: BuyInput) {
       {
         side: input.side,
         quantity: input.quantity,
-        isSimulated: env.kind === "DEMO",
+        trader: profile.displayName,
+        isSimulated: env.kind === "DEMO" || profile.kind === "BOT",
       },
       quote.costMicros,
       id,
@@ -328,7 +329,7 @@ export async function sell(actor: Actor, raw: SellInput) {
   const input = sellInput.parse(raw),
     requestHash = hash({ action: "SELL", marketId: input.marketId, environmentId: input.environmentId, side: input.side, quantity: input.quantity, minProceedsMicros: input.minProceedsMicros });
   return transaction(async (tx) => {
-    await authorizeActor(tx, actor, input.environmentId);
+    const profile = await authorizeActor(tx, actor, input.environmentId);
     const wallet = await tx.wallet.findUnique({ where: { environmentId_profileId: { environmentId: input.environmentId, profileId: actor.profileId } } });
     ensure(wallet, "WALLET_REQUIRED", 409);
     const lookup = () => tx.trade.findUnique({ where: { walletId_idempotencyKey: { walletId: wallet.id, idempotencyKey: input.idempotencyKey } } });
@@ -361,7 +362,7 @@ export async function sell(actor: Actor, raw: SellInput) {
         : position!.totalCostMicros * BigInt(input.quantity) / held;
     await tx.position.update({ where: { marketId_walletId: { marketId: market.id, walletId: wallet.id } }, data: { yesShares: { decrement: delta.yesShares }, noShares: { decrement: delta.noShares }, totalCostMicros: { decrement: basisToRemove } } });
     const trade = await tx.trade.create({ data: { id, environmentId: input.environmentId, marketId: market.id, walletId: wallet.id, side: input.side, action: "SELL", quantity: BigInt(input.quantity), costMicros: quote.proceedsMicros, yesPriceBefore: quote.yesPriceBefore, yesPriceAfter: quote.yesPriceAfter, marketVersion: updated.version, idempotencyKey: input.idempotencyKey, requestHash, paymentTransferId: payment.id, createdAt: at } });
-    await appendEvent(tx, updated, "PRICE_CHANGED", at, { action: "SELL", side: input.side, quantity: input.quantity, isSimulated: env.kind === "DEMO" }, quote.proceedsMicros, id);
+    await appendEvent(tx, updated, "PRICE_CHANGED", at, { action: "SELL", side: input.side, quantity: input.quantity, trader: profile.displayName, isSimulated: env.kind === "DEMO" || profile.kind === "BOT" }, quote.proceedsMicros, id);
     if (env.kind === "DEMO") {
       const last = await tx.demoAction.aggregate({ where: { environmentId: env.id }, _max: { sequence: true } });
       await tx.demoAction.create({ data: { environmentId: env.id, sequence: (last._max.sequence ?? 0n) + 1n, virtualAt: at, actorProfileId: actor.profileId, actionType: "SELL", input: { ...input }, resultReference: id } });
