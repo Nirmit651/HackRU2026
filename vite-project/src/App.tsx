@@ -95,13 +95,14 @@ type Receipt = {
   verification: { status: string };
 };
 function MarketSparkline({ market }: { market: PublicMarket }) {
-  const [values, setValues] = useState<number[]>([Number(market.yesPrice)]);
+  const [values, setValues] = useState<number[]>([]);
   useEffect(() => {
     let active = true;
     if (market.status !== "OPEN") return;
     request<History>(`/markets/${market.id}/history?range=1D`)
       .then((history) => {
         const prices = history.events
+          .filter((event) => event.kind === "PRICE_CHANGED")
           .map((event) => Number(event.yesPrice))
           .filter((price) => Number.isFinite(price) && price >= 0 && price <= 1);
         if (active && prices.length) setValues(prices);
@@ -110,16 +111,17 @@ function MarketSparkline({ market }: { market: PublicMarket }) {
     return () => { active = false; };
   }, [market.id, market.status, market.version]);
   const points = values.slice(-32);
-  const coordinates = points.map((value, index) => {
-    const x = points.length === 1 ? 80 : (index / (points.length - 1)) * 160;
+  const displayed = points.length ? points : [Number(market.yesPrice)];
+  const coordinates = displayed.map((value, index) => {
+    const x = displayed.length === 1 ? 80 : (index / (displayed.length - 1)) * 160;
     return `${x.toFixed(1)},${(42 - value * 38).toFixed(1)}`;
   });
   const line = coordinates.join(" ");
   const fill = line ? `0,44 ${line} 160,44` : "";
-  return <svg className="market-sparkline" viewBox="0 0 160 44" role="img" aria-label="Market price history">
+  return <svg className="market-sparkline" viewBox="0 0 160 44" role="img" aria-label={points.length > 1 ? "Market price history" : "Current market price; no completed trades yet"}>
     <title>Market price history</title>
-    {fill && <polygon points={fill} />}
-    {line && <polyline points={line} />}
+    {points.length > 1 && fill && <polygon points={fill} />}
+    {points.length > 1 ? <polyline points={line} /> : <circle cx="80" cy={coordinates[0]?.split(",")[1]} r="3.5" />}
   </svg>;
 }
 export default function App() {

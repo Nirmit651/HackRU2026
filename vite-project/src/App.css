@@ -1963,3 +1963,19 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .market-card-body { grid-template-columns: minmax(0, 1fr) 116px; }
 .market-sparkline { min-width: 0; }
 .card-probability { min-width: 0; }
+
+/* Card data stays readable at every grid width. */
+.market-card-body { grid-template-columns: minmax(155px, 1fr) minmax(142px, auto); gap: 20px; }
+.card-probability { display: grid; grid-template-columns: 1fr; gap: 4px; min-width: 142px; }
+.card-probability span, .card-probability small { white-space: nowrap; }
+.market-sparkline circle { fill: var(--scarlet); }
+.market-card-footer { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+.market-contracts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.contract-chip { justify-content: space-between; min-width: 0; white-space: nowrap; }
+.contract-chip strong { white-space: nowrap; }
+@media (max-width: 440px) {
+  .market-card-body { grid-template-columns: minmax(0, 1fr) 132px; gap: 12px; }
+  .card-probability { min-width: 132px; }
+  .card-probability strong { font-size: 28px; }
+  .contract-chip { padding-inline: 9px; font-size: 10px; }
+}
