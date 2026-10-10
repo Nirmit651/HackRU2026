@@ -42,6 +42,50 @@ export async function busSnapshot(
   });
   const automation = ruleSchema.parse(market.resolutionRule).automation;
   if (automation?.type === "bus") {
+    const settings = automation.settings;
+    if (
+      settings.kind === "arrival_by_deadline" ||
+      settings.kind === "presence_at_time"
+    ) {
+      const [observation] = await db.$queryRaw<
+        {
+          vehicle_id: string;
+          route_id: string;
+          source_measured_at: Date;
+          retrieved_at: Date;
+          latitude: number;
+          longitude: number;
+        }[]
+      >`
+        SELECT vehicle_id,route_id,source_measured_at,retrieved_at,latitude,longitude
+        FROM public.bus_observations
+        WHERE source_system=${String(settings.sourceSystem)}
+          AND vehicle_id=${String(settings.vehicleId)}
+          AND route_id=${String(settings.routeId)}
+          AND is_valid AND observation_kind='vehicle_position'
+          AND measurement_time_basis='source'
+          AND source_measured_at IS NOT NULL
+          AND latitude IS NOT NULL AND longitude IS NOT NULL
+        ORDER BY source_measured_at DESC,id DESC LIMIT 1`;
+      if (!observation) return null;
+      const sourceAt = observation.source_measured_at.toISOString();
+      return {
+        source: market.provider,
+        isSimulated: env.kind === "DEMO",
+        observedAt: sourceAt,
+        receivedAt: observation.retrieved_at.toISOString(),
+        vehicles: [
+          {
+            id: observation.vehicle_id,
+            routeId: observation.route_id,
+            latitude: observation.latitude,
+            longitude: observation.longitude,
+            updatedAt: sourceAt,
+          },
+        ],
+        stops: [settings.stop as BusSnapshot["stops"][number]],
+      };
+    }
     const row = await db.automationState.findUnique({
       where: {
         environmentId_key: {

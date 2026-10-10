@@ -1,10 +1,17 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-const { queryRaw, finish } = vi.hoisted(() => ({
+const { queryRaw, finish, findMarket, findEnvironment } = vi.hoisted(() => ({
   queryRaw: vi.fn(),
   finish: vi.fn(),
+  findMarket: vi.fn(),
+  findEnvironment: vi.fn(),
 }));
 vi.mock("../server/db", () => ({
-  db: { $queryRaw: queryRaw },
+  db: {
+    $queryRaw: queryRaw,
+    market: { findUniqueOrThrow: findMarket },
+    environment: { findUniqueOrThrow: findEnvironment },
+    automationState: { findUnique: vi.fn() },
+  },
   transaction: vi.fn(),
   lockEnvironment: vi.fn(),
   lockMarket: vi.fn(),
@@ -15,7 +22,8 @@ vi.mock("../server/automation/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../server/automation/core")>()),
   finish,
 }));
-import { dayInterval, settingsSchema } from "../server/automation/core";
+import { dayInterval, rule, settingsSchema } from "../server/automation/core";
+import { busSnapshot } from "../server/bus";
 import { observedAverage, roundThreshold } from "../server/automation/weather";
 import {
   advanceVisit,
@@ -204,6 +212,66 @@ describe("scheduled bus markets", () => {
     expect(finish).not.toHaveBeenCalled();
     await monitorScheduledBus(market, settings, new Date(settings.voidAfter));
     expect(finish).toHaveBeenCalledTimes(1);
+  });
+});
+describe("scheduled bus snapshots", () => {
+  const stop = {
+    id: "livingston",
+    name: "Livingston Plaza",
+    latitude: 40.5235,
+    longitude: -74.437,
+    sourceUrl: "https://example.invalid/stops/livingston",
+  };
+  const scheduledRule = rule(
+    "bus",
+    "rubus",
+    "scheduled-lx",
+    new Date("2026-10-10T15:00:00.000Z"),
+    new Date("2026-10-10T15:00:00.000Z"),
+    new Date("2026-10-10T16:00:00.000Z"),
+    new Date("2026-10-10T16:05:00.000Z"),
+    {
+      kind: "arrival_by_deadline",
+      sourceSystem: "rubus",
+      vehicleId: "bus-12",
+      routeId: "LX",
+      stop,
+    },
+    "A scheduled bus market.",
+  );
+  beforeEach(() => {
+    queryRaw.mockReset();
+    findMarket.mockReset();
+    findEnvironment.mockReset();
+    findMarket.mockResolvedValue({
+      category: "BUS_ARRIVAL",
+      environmentId: "env",
+      provider: "RUBus",
+      resolutionRule: scheduledRule,
+    });
+    findEnvironment.mockResolvedValue({ id: "env", kind: "LIVE" });
+  });
+  it("returns the latest matching persisted observation with the frozen stop", async () => {
+    queryRaw.mockResolvedValue([
+      {
+        vehicle_id: "bus-12",
+        route_id: "LX",
+        source_measured_at: new Date("2026-10-10T16:00:02.000Z"),
+        retrieved_at: new Date("2026-10-10T16:00:03.000Z"),
+        latitude: 40.523,
+        longitude: -74.436,
+      },
+    ]);
+    await expect(busSnapshot("market")).resolves.toMatchObject({
+      source: "RUBus",
+      isSimulated: false,
+      vehicles: [{ id: "bus-12", routeId: "LX", latitude: 40.523, longitude: -74.436 }],
+      stops: [stop],
+    });
+  });
+  it("returns null when no matching persisted observation exists", async () => {
+    queryRaw.mockResolvedValue([]);
+    await expect(busSnapshot("market")).resolves.toBeNull();
   });
 });
 describe("documented sports schemas", () => {
