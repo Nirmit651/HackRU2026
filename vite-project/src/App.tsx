@@ -487,7 +487,7 @@ export default function App() {
                 <a href="#resolution"><FileText size={14} /> Rules & resolution</a>
               </p>
               <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
-              {selected.category === "PRESENTATION_DEMO" && <PresentationPanel market={selected} admin={demoAdmin} onRefresh={refreshAccount} />}
+              {selected.category === "PRESENTATION_DEMO" && <PresentationPanel market={selected} admin={demoAdmin} onRefresh={refreshAccount} onRestart={() => request<{ market: PublicMarket }>("/presentation/create", {}).then((r) => { setSelected(r.market); refreshAccount(); }).catch((e) => setError(e.message))} />}
             </div>
             <div className="detail-grid">
               <div className="detail-content">
@@ -687,7 +687,7 @@ function DemoAdminDialog({ open, onClose, onActive }: { open: boolean; onClose: 
   </section></div>;
 }
 type PresentationRun = { id: string; status: string; startedAt: string | null; deadlineAt: string | null; finishedAt: string | null; outcome: string | null; botCount: number; botTradeCount: number; botVolumeMicros: string; lastBotActivityAt: string | null };
-function PresentationPanel({ market, admin, onRefresh }: { market: PublicMarket; admin: boolean; onRefresh: () => void }) {
+function PresentationPanel({ market, admin, onRefresh, onRestart }: { market: PublicMarket; admin: boolean; onRefresh: () => void; onRestart: () => void }) {
   const [run, setRun] = useState<PresentationRun | null>(null), [nowMs, setNowMs] = useState(Date.now()), [error, setError] = useState("");
   const load = useCallback(() => request<PresentationRun>(`/presentation/${market.id}`).then(setRun).catch(() => setRun(null)), [market.id]);
   useEffect(() => { void load(); const poll = setInterval(() => { void load(); setNowMs(Date.now()); }, 500); const smooth = setInterval(() => setNowMs(Date.now()), 50); return () => { clearInterval(poll); clearInterval(smooth); }; }, [load]);
@@ -705,6 +705,7 @@ function PresentationPanel({ market, admin, onRefresh }: { market: PublicMarket;
       {run?.status === "RUNNING" && <><button className="solid danger" disabled={deadlinePassed} onClick={() => control(`/presentation/${market.id}/finish`)}>{deadlinePassed ? "Timer expired" : "Finish presentation"}</button><button className="outline" onClick={() => control(`/presentation/${market.id}/whale`)}>Trigger whale trade</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "PAUSED" })}>Pause bots</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "STOPPED" })}>Stop bots</button></>}
       {run?.status === "PAUSED" && <button className="solid" onClick={() => control(`/presentation/${market.id}/bots`, { status: "RUNNING" })}>Resume bots</button>}
       {run?.status === "STOPPED" && <button className="solid" onClick={() => control(`/presentation/${market.id}/bots`, { status: "RUNNING" })}>Restart bots</button>}
+      {run?.outcome && <button className="outline presentation-restart" onClick={onRestart}>Restart with a new demo</button>}
     </div>}
     {error && <p className="trade-error">{error}</p>}
   </section>;

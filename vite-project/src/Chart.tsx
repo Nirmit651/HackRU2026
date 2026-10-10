@@ -245,21 +245,23 @@ export function MarketChart({
           ))}
         </div>
       </div>
-      <div
-        ref={host}
-        className="chart"
-        aria-label="Market-implied YES probability and traded volume"
-      />
-      {recent.length > 0 && <div className="chart-trade-stack" aria-live="polite">
-        {recent.map((e) => <div className="chart-trade-line" key={e.id}>
-          <strong>{String(e.payload.trader ?? "Anonymous")}</strong>
-          <span>{String(e.payload.action ?? "BUY").toLowerCase()} {String(e.payload.quantity)} {String(e.payload.side)}</span>
-        </div>)}
-      </div>}
-      {recent.at(-1) && <div className="chart-last-trade" aria-live="polite">
-        <span>{String(recent.at(-1)?.payload.trader ?? "Anonymous")}</span>
-        <strong>{String(recent.at(-1)?.payload.side)} · {dollars(recent.at(-1)!.tradeAmountMicros)}</strong>
-      </div>}
+      <div className="chart-visual">
+        <div
+          ref={host}
+          className="chart"
+          aria-label="Market-implied YES probability and traded volume"
+        />
+        {recent.length > 0 && <div className="chart-trade-stack" aria-live="polite">
+          {recent.map((e) => <div className="chart-trade-line" key={e.id}>
+            <strong>{String(e.payload.trader ?? "Anonymous")}</strong>
+            <span>{String(e.payload.action ?? "BUY").toLowerCase()} {String(e.payload.quantity)} {String(e.payload.side)}</span>
+          </div>)}
+        </div>}
+        {recent.at(-1) && <div className="chart-last-trade" aria-live="polite">
+          <span>{String(recent.at(-1)?.payload.trader ?? "Anonymous")}</span>
+          <strong>{String(recent.at(-1)?.payload.side)} · {dollars(recent.at(-1)!.tradeAmountMicros)}</strong>
+        </div>}
+      </div>
       <div className="chart-credit">
         <span>{source} · America/New_York</span>
         <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">

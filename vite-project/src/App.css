@@ -2087,10 +2087,12 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .auth-dialog label { display: grid; gap: 7px; margin: 20px 0; color: #4e4549; font-size: 13px; font-weight: 700; }
 .auth-dialog input { width: 100%; padding: 12px; border: 1px solid #d6cbd0; border-radius: 8px; background: #fff; color: #171216; font: inherit; }
 .auth-dialog .solid { width: 100%; justify-content: center; }
-.chart-section { position: relative; }
-.chart-trade-stack { position: absolute; left: 20px; bottom: 42px; z-index: 4; display: grid; gap: 3px; max-width: min(280px, 58%); pointer-events: none; }
-.chart-trade-line { display: flex; gap: 7px; overflow: hidden; color: #5f565a; font-size: 11px; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; animation: trade-slide .24s ease-out; }
+.chart-visual { position: relative; min-height: 342px; overflow: hidden; border-radius: 10px; isolation: isolate; }
+.chart-trade-stack { position: absolute; left: 14px; bottom: 20px; z-index: 4; display: grid; gap: 5px; width: min(300px, calc(100% - 180px)); pointer-events: none; }
+.chart-trade-line { display: flex; gap: 7px; overflow: hidden; padding: 4px 7px; border: 1px solid rgba(234, 217, 222, .86); border-radius: 5px; background: rgba(255,255,255,.9); color: #5f565a; font-size: 11px; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; animation: trade-slide .24s ease-out; }
 .chart-trade-line strong { color: #252024; font-weight: 800; }
-.chart-last-trade { position: absolute; right: 20px; bottom: 42px; z-index: 4; display: grid; justify-items: end; gap: 2px; padding: 8px 10px; border: 1px solid #ead9de; border-radius: 8px; background: rgba(255,255,255,.92); color: #695d62; font-size: 11px; pointer-events: none; }
+.chart-last-trade { position: absolute; right: 14px; bottom: 20px; z-index: 4; display: grid; justify-items: end; gap: 2px; min-width: 126px; padding: 8px 10px; border: 1px solid #ead9de; border-radius: 8px; background: rgba(255,255,255,.94); color: #695d62; font-size: 11px; pointer-events: none; }
 .chart-last-trade strong { color: var(--scarlet); font-size: 12px; }
+.presentation-restart { margin-top: 4px; border-color: #d31638; color: var(--scarlet); }
+@media (max-width: 520px) { .chart-visual { min-height: 300px; } .chart { height: 300px; } .chart-trade-stack { width: calc(100% - 28px); bottom: 58px; } .chart-last-trade { bottom: 14px; } }
 @keyframes trade-slide { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
