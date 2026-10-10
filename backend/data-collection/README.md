@@ -58,19 +58,6 @@ so do not run multiple instances against the same database. `demo.rubus.live`
 is the configured demonstration endpoint and must not automatically be treated
 as an authoritative live Rutgers source.
 
-## Render deployment
-
-Deploy exactly one `rutgers-bus-collector` worker and set `SUPABASE_DB_URL` in
-Render. Its command is:
-
-```bash
-python -m rutgers_bus_collector.cli --watch --interval 15
-```
-
-Inspect Render logs for one JSON result per attempt. Never run another
-collector instance against the same database. `demo.rubus.live` is not
-automatically an authoritative Rutgers production source.
-
 The collector first commits a `running` collection attempt. The raw snapshot,
 valid normalized observations, route verification timestamps, and terminal run
 status are then written in one transaction. A failed transaction is recorded as
