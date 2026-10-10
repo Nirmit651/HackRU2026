@@ -13,7 +13,7 @@ import {
 } from "../shared/contracts";
 import { buy, sell, grantWallet, lifecycle, settle, reconcile } from "./engine";
 import { execution, saleExecution } from "./math";
-import { identity, scopedIdentity, admin, demoToken, localDemo } from "./auth";
+import { identity, scopedIdentity, admin, demoToken, localDemo, demoAdmin, issueDemoAdminSession, verifyDemoAdminPassword } from "./auth";
 import { history, diagnostics } from "./tiger";
 import { newDemo } from "./demo";
 import { busSnapshot } from "./bus";
@@ -21,6 +21,7 @@ import { createMarket, createMarketInput } from "./markets";
 import { verifyCommitment } from "./chain";
 import { automationStatus, configure, reconcileAutomation } from "./automation";
 import { types, nowFor } from "./automation/core";
+import { createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
 export const app = express();
 app.disable("x-powered-by");
 app.set("json replacer", (_key: string, v: unknown) =>
@@ -84,6 +85,18 @@ app.get("/api/config", (_req, res) =>
     mapStyle: process.env.MAP_STYLE_URL ?? null,
   }),
 );
+app.get("/api/demo-admin/session", (req, res) => {
+  try { demoAdmin(req); res.json({ active: true }); } catch { res.json({ active: false }); }
+});
+app.post("/api/demo-admin/session", (req, res) => {
+  verifyDemoAdminPassword(z.object({ password: z.string().min(1).max(200) }).parse(req.body).password);
+  res.setHeader("Set-Cookie", `scarlet_demo_admin=${issueDemoAdminSession()}; HttpOnly; Path=/; SameSite=Lax; Max-Age=21600${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+  res.json({ active: true });
+});
+app.delete("/api/demo-admin/session", (_req, res) => {
+  res.setHeader("Set-Cookie", "scarlet_demo_admin=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
+  res.status(204).end();
+});
 app.get("/api/environments", async (_req, res) =>
   res.json(
     await db.environment.findMany({
@@ -173,6 +186,23 @@ app.get("/api/markets/:id", async (req, res) => {
   });
   ensure(market, "NOT_FOUND", 404);
   res.json({ ...market, asOf: new Date() });
+});
+app.get("/api/presentation/:marketId", async (req, res) => res.json(await presentationStatus(id(req.params.marketId))));
+app.post("/api/presentation/create", async (req, res) => { demoAdmin(req); res.json(await createPresentationDemo()); });
+app.post("/api/presentation/:marketId/start", async (req, res) => { demoAdmin(req); res.json(await startPresentation(id(req.params.marketId))); });
+app.post("/api/presentation/:marketId/finish", async (req, res) => { demoAdmin(req); res.json(await finishPresentation(id(req.params.marketId))); });
+app.post("/api/presentation/:marketId/whale", async (req, res) => { demoAdmin(req); const run = await presentationStatus(id(req.params.marketId)); res.json(await tickPresentationRun(run.id, true)); });
+app.post("/api/presentation/:marketId/bots", async (req, res) => {
+  demoAdmin(req);
+  const status = z.object({ status: z.enum(["RUNNING", "PAUSED", "STOPPED"]) }).parse(req.body).status;
+  const run = await presentationStatus(id(req.params.marketId));
+  ensure(run.status === "RUNNING" || status === "RUNNING", "PRESENTATION_NOT_ACTIVE", 409);
+  res.json(await db.presentationDemoRun.update({ where: { id: run.id }, data: { status } }));
+});
+app.post("/api/presentation/tick", async (req, res) => {
+  const token = req.headers.authorization?.replace(/^Bearer /, "");
+  ensure(token && token === process.env.PRESENTATION_RUNNER_TOKEN, "UNAUTHORIZED", 401);
+  await tickPresentationRuns(); res.json({ ok: true });
 });
 app.get("/api/markets/:id/history", async (req, res) =>
   res.json(

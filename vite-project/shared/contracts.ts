@@ -6,6 +6,7 @@ export const categories = [
   "CONCERT",
   "STUDENT_ELECTION",
   "VARSITY_SPORTS",
+  "PRESENTATION_DEMO",
 ] as const;
 export const campuses = [
   "BUSCH",

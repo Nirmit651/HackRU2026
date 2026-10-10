@@ -43,9 +43,7 @@ export async function authorizeActor(
       where: { id: environmentId },
     });
     ensure(
-      profile.kind === "BOT" &&
-        env.kind === "DEMO" &&
-        actor.environmentId === environmentId,
+      profile.kind === "BOT" && actor.environmentId === environmentId,
       "FORBIDDEN",
       403,
     );
@@ -497,6 +495,7 @@ export async function settle(
   marketId: string,
   raw: ProviderEvidence,
   resolverProfileId?: string,
+  options?: { allowEarly?: boolean; receiptExtra?: Record<string, unknown>; resolverVersion?: string },
 ) {
   return transaction(async (tx) => {
     const pre = await tx.market.findUniqueOrThrow({ where: { id: marketId } });
@@ -524,7 +523,7 @@ export async function settle(
     }
     ensure(
       market.status !== "DRAFT" &&
-        (at >= market.closesAt ||
+        (options?.allowEarly || at >= market.closesAt ||
           (market.status === "CLOSED" &&
             !!ruleSchema.parse(market.resolutionRule).automation)),
       "MARKET_NOT_CLOSED",
@@ -573,6 +572,7 @@ export async function settle(
       provenance:
         env.kind === "DEMO" ? "SYNTHETIC_FIXTURE" : "AUTHORIZED_EVIDENCE",
       totalPayoutMicros: totalPayoutMicros.toString(),
+      ...options?.receiptExtra,
     };
     const settlement = await tx.settlement.create({
       data: {
@@ -582,7 +582,7 @@ export async function settle(
         evidenceId: evidence.id,
         ruleVersion: market.ruleVersion,
         resolvedByProfileId: resolverProfileId,
-        resolverVersion: "rules-v1",
+        resolverVersion: options?.resolverVersion ?? "rules-v1",
         settledAt: at,
         receipt,
         receiptHash: hash(receipt),

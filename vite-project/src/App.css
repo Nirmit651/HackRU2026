@@ -2069,3 +2069,14 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .trade-action-tabs button:focus-visible { outline: 2px solid var(--scarlet); outline-offset: 2px; }
 .side-picker button:disabled { cursor: not-allowed; opacity: .42; }
 .trade-ticket-heading span { margin-left: 0; color: #77747b; }
+
+/* Server-timed HackRU presentation market. */
+.demo-admin-button { margin-right: 10px; white-space: nowrap; }
+.presentation-panel { margin: 18px 0 22px; padding: 28px; border: 1px solid #f0c9d2; border-radius: 16px; background: radial-gradient(circle at 100% 0, #fff0f3, #fff 58%); text-align: center; }
+.presentation-panel .eyebrow { color: var(--scarlet); }
+.presentation-timer { display: block; margin: 10px 0 2px; color: var(--scarlet); font-size: clamp(54px, 10vw, 104px); font-variant-numeric: tabular-nums; letter-spacing: -.08em; line-height: .95; }
+.presentation-ready, .presentation-outcome { display: block; margin: 12px 0; font-size: 30px; }
+.presentation-outcome { color: var(--scarlet); }
+.presentation-stats { color: #6c6266; font-size: 13px; }
+.presentation-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+.presentation-controls .danger { background: #9e102c; }

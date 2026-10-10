@@ -29,6 +29,7 @@ export async function request<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error?.code ?? "Request failed");

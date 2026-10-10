@@ -47,6 +47,7 @@ enum Category {
   CONCERT
   STUDENT_ELECTION
   VARSITY_SPORTS
+  PRESENTATION_DEMO
 }
 
 enum ContractSide {
@@ -94,6 +95,8 @@ model Profile {
   submittedEvidence   Evidence[]
   resolvedSettlements Settlement[]
   actions             DemoAction[]
+  simulationBotStates SimulationBotState[]
+  simulationDecisions SimulationDecision[]
 
   @@map("profiles")
 }
@@ -115,6 +118,7 @@ model Environment {
   markets             Market[]
 
   actions DemoAction[]
+  presentationRuns PresentationDemoRun[]
 
   @@map("environments")
 }
@@ -180,6 +184,7 @@ model Market {
   evidence             Evidence[]
   settlement           Settlement?
   commitments          ChainCommitment[]
+  presentationRun      PresentationDemoRun?
 
   @@unique([environmentId, slug])
   @@unique([environmentId, generatorKey])
@@ -187,6 +192,85 @@ model Market {
   @@unique([id, environmentId])
   @@index([environmentId, status, category, closesAt])
   @@map("markets")
+}
+
+// The short, live HackRU presentation uses the same Market, Trade, Position
+// and Settlement records as every other market.  These records only store the
+// timer/simulation orchestration state; they never store balances or prices.
+model PresentationDemoRun {
+  id                  String   @id @default(uuid()) @db.Uuid
+  marketId            String   @unique @db.Uuid
+  environmentId       String   @db.Uuid
+  status              String   @default("READY")
+  seed                Int
+  startedAt           DateTime? @db.Timestamptz
+  deadlineAt          DateTime? @db.Timestamptz
+  finishedAt          DateTime? @db.Timestamptz
+  outcome             SettlementOutcome?
+  workflowRunId       String?
+  botCount            Int      @default(12)
+  botTradeCount       Int      @default(0)
+  botVolumeMicros     BigInt   @default(0)
+  lastBotActivityAt   DateTime? @db.Timestamptz
+  createdByProfileId  String?  @db.Uuid
+  createdAt           DateTime @default(now()) @db.Timestamptz
+  updatedAt           DateTime @updatedAt @db.Timestamptz
+  market              Market   @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  environment         Environment @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  botStates           SimulationBotState[]
+  decisions           SimulationDecision[]
+
+  @@index([environmentId, status, createdAt])
+  @@map("presentation_demo_runs")
+}
+
+model SimulationBotState {
+  id                  String   @id @default(uuid()) @db.Uuid
+  runId               String   @db.Uuid
+  botProfileId        String   @db.Uuid
+  marketId            String   @db.Uuid
+  strategy            String
+  belief              Decimal  @default(0.5) @db.Decimal(8, 6)
+  currentlyHeldSide   ContractSide?
+  spentMicros         BigInt   @default(0)
+  proceedsMicros      BigInt   @default(0)
+  tradeCount          Int      @default(0)
+  lastDecisionAt      DateTime? @db.Timestamptz
+  nextDecisionAt      DateTime? @db.Timestamptz
+  stateJson           Json     @default("{}")
+  version             Int      @default(0)
+  run                 PresentationDemoRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  bot                 Profile  @relation(fields: [botProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([runId, botProfileId])
+  @@index([marketId, nextDecisionAt])
+  @@map("simulation_bot_states")
+}
+
+model SimulationDecision {
+  id                  String   @id @default(uuid()) @db.Uuid
+  runId               String   @db.Uuid
+  botProfileId        String   @db.Uuid
+  sequence            Int
+  elapsedMilliseconds Int
+  timerSignal         Decimal  @db.Decimal(8, 6)
+  priceBefore         Decimal  @db.Decimal(8, 6)
+  heldSideBefore      ContractSide?
+  desiredSide         ContractSide?
+  action              String
+  quantity            Int      @default(0)
+  sellTradeId         String?  @db.Uuid
+  buyTradeId          String?  @db.Uuid
+  skipReason          String?
+  idempotencyKeys     Json     @default("{}")
+  createdAt           DateTime @default(now()) @db.Timestamptz
+  completedAt         DateTime? @db.Timestamptz
+  run                 PresentationDemoRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  bot                 Profile  @relation(fields: [botProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([runId, botProfileId, sequence])
+  @@index([runId, createdAt])
+  @@map("simulation_decisions")
 }
 
 model AutomationConfig {

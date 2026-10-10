@@ -62,6 +62,31 @@ MCP is a development connection; runtime still needs its own URLs/keys. `codex m
 
 ## Demo walkthrough
 
+## One-minute presentation demo
+
+The featured **Presentation Demo** is a real market, not a visual simulation:
+its bot orders call the same LMSR buy/sell engine, wallet ledger, position
+invariant, event stream, chart and settlement service as participant orders.
+
+1. Click **Become admin** and enter `admin` (the server-only
+   `DEMO_ADMIN_PASSWORD`; change it outside the repository for any public use).
+2. Click **Create presentation demo**, open the resulting card, then choose
+   **Start presentation market**. The server stores one `startedAt` and a
+   `deadlineAt` exactly 60 seconds later.
+3. Use **Finish presentation** before the deadline to settle NO. At the exact
+   deadline—or after a delayed worker wake—the stored deadline settles YES.
+   The browser timer is display-only and reconstructs from those server values.
+4. Bot side changes sell their complete current side through `sell()` before
+   a separate idempotent `buy()` call. They never directly edit positions,
+   balances, price, volume or chart history.
+
+`server/worker.ts` wakes database-backed presentation runs every second during
+local development. In production, invoke `POST /api/presentation/tick` from a
+durable scheduler with `PRESENTATION_RUNNER_TOKEN`; it is idempotent and
+derives settlement from persisted timestamps. The existing `AutomationJob`
+and run records are the durable orchestration source of truth, avoiding an
+in-memory serverless timer. Configure the same secrets in Vercel before deploy.
+
 1. Join in one browser; open the same environment/market in another.
 2. Admin → **Start**, optionally 2×/5×/10×. The worker must be running.
 3. Buy ten YES shares. Cash and holdings update, and the second client recovers the quote/chart update. Twenty labeled synthetic bots use the same engine.

@@ -3,6 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
 import { db, ensure } from "./db";
 const secret = randomBytes(32);
+const demoAdminSecret = process.env.DEMO_ADMIN_SESSION_SECRET ?? process.env.DEMO_ADMIN_PASSWORD ?? "development-only-demo-admin";
 const supabase =
   process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY
     ? createClient(
@@ -71,4 +72,26 @@ export async function admin(req: Request) {
   const user = await identity(req);
   ensure(user.admin, "FORBIDDEN", 403);
   return user;
+}
+
+function demoAdminSignature(data: string) {
+  return createHmac("sha256", demoAdminSecret).update(data).digest("base64url");
+}
+export function issueDemoAdminSession() {
+  const data = Buffer.from(JSON.stringify({ expires: Date.now() + 6 * 60 * 60 * 1000 })).toString("base64url");
+  return `${data}.${demoAdminSignature(data)}`;
+}
+export function demoAdmin(req: Request) {
+  const cookie = req.headers.cookie?.split(";").map((v) => v.trim()).find((v) => v.startsWith("scarlet_demo_admin="))?.slice("scarlet_demo_admin=".length);
+  ensure(cookie, "DEMO_ADMIN_REQUIRED", 401);
+  const [data, sig] = cookie.split("."), expected = demoAdminSignature(data ?? "");
+  ensure(!!sig && sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected)), "DEMO_ADMIN_REQUIRED", 401);
+  const value = JSON.parse(Buffer.from(data!, "base64url").toString()) as { expires?: number };
+  ensure((value.expires ?? 0) > Date.now(), "DEMO_ADMIN_REQUIRED", 401);
+  return true;
+}
+export function verifyDemoAdminPassword(password: string) {
+  const expected = process.env.DEMO_ADMIN_PASSWORD;
+  ensure(expected && password.length === expected.length && timingSafeEqual(Buffer.from(password), Buffer.from(expected)), "INVALID_DEMO_ADMIN_PASSWORD", 401);
+  return true;
 }

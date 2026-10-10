@@ -18,6 +18,8 @@ export function marketTemplate(category: Category, environmentId: string) {
       "The named candidate wins the identified election according to official final results.",
     VARSITY_SPORTS:
       "Rutgers wins the identified scheduled game according to the final provider result.",
+    PRESENTATION_DEMO:
+      "The server-authoritative presentation timer reaches sixty seconds before a valid finish action.",
   };
   const rule: Rule = ruleSchema.parse({
     canonicalizationVersion: "rutgers-v1",
