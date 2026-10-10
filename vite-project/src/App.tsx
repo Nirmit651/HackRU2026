@@ -221,7 +221,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header>
-        <a className="brand" href="/" aria-label="Scarlet market home">
+        <a className="brand" href="/" aria-label="Rutgers Prediction Markets home">
           <span className="brand-mark">
             s<span>↗</span>
           </span>

@@ -23,7 +23,8 @@ export function MarketChart({
   const [range, setRange] = useState("ALL"),
     [status, setStatus] = useState("Connecting"),
     [source, setSource] = useState("Loading history"),
-    [recent, setRecent] = useState<PublicEvent[]>([]);
+    [recent, setRecent] = useState<PublicEvent[]>([]),
+    [panel, setPanel] = useState<"activity" | "rules" | "source">("activity");
   useEffect(() => {
     if (!host.current) return;
     let stopped = false,
@@ -256,23 +257,21 @@ export function MarketChart({
           Charts by TradingView ↗
         </a>
       </div>
-      <div className="recent-activity">
-        <h3>Recent activity</h3>
-        {recent.length ? (
-          recent.map((e) => (
-            <div key={e.id}>
-              <span>
-                {String(e.payload.quantity)} {String(e.payload.side)} shares
-              </span>
-              <span>{date(e.occurredAt)}</span>
-              <span>
-                {e.payload.isSimulated ? "Simulated trade" : "Anonymous trade"}
-              </span>
-            </div>
-          ))
-        ) : (
-          <p>No purchases yet.</p>
-        )}
+      <div className="market-detail-tabs" role="tablist" aria-label="Market details">
+        <button role="tab" aria-selected={panel === "activity"} className={panel === "activity" ? "active" : ""} onClick={() => setPanel("activity")}>Recent activity</button>
+        <button role="tab" aria-selected={panel === "rules"} className={panel === "rules" ? "active" : ""} onClick={() => setPanel("rules")}>Rules</button>
+        <button role="tab" aria-selected={panel === "source"} className={panel === "source" ? "active" : ""} onClick={() => setPanel("source")}>Resolution source</button>
+      </div>
+      <div className="market-tab-panel">
+        {panel === "activity" && (recent.length ? recent.map((e) => (
+          <div className="activity-row" key={e.id}>
+            <span>{String(e.payload.quantity)} {String(e.payload.side)} shares</span>
+            <span>{date(e.occurredAt)}</span>
+            <span>{e.payload.isSimulated ? "Simulated trade" : "Anonymous trade"}</span>
+          </div>
+        )) : <p>No purchases yet.</p>)}
+        {panel === "rules" && <p>{market.resolutionRule.yesCondition}</p>}
+        {panel === "source" && <p>Settlement uses the frozen market rule and the linked <a href={market.sourceUrl} target="_blank" rel="noreferrer">resolution source</a>. Missing qualifying evidence follows this market’s stated VOID policy.</p>}
       </div>
     </section>
   );
