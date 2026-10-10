@@ -1,0 +1,38 @@
+{
+  "recordedAt": "2026-10-10T17:17:23.947Z",
+  "workload": "20 clients, 1000 one-share buys across six markets; 20 warmup buys; same production trading service; no provider/network calls",
+  "clock": "DEMO frozen 2026-10-10T16:00:00Z; environment lock serializes virtual-clock safety",
+  "clients": 20,
+  "attempts": 1000,
+  "accepted": 1000,
+  "rejected": 0,
+  "reasons": {},
+  "durationMs": 4235.262458,
+  "tradesPerSecond": 236.1128761007708,
+  "latencyMs": {
+    "p50": 82.22870899999998,
+    "p95": 92.42204199999992
+  },
+  "node": "v26.4.0",
+  "cpu": "Apple M4 Max",
+  "logicalCpus": 14,
+  "ramBytes": 38654705664,
+  "limits": "Local host shared resources; no CPU/RAM container limit. PostgreSQL shared_buffers=128MB; max_connections=60.",
+  "postgres": [
+    {
+      "version": "PostgreSQL 18.6 (Postgres.app) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 15.0.0 (clang-1500.3.9.4), 64-bit",
+      "shared_buffers": "128MB",
+      "max_connections": "60"
+    }
+  ],
+  "environmentId": "1fcf4e7f-98d4-488f-a387-be1d169fd0f9",
+  "reconciliation": {
+    "ok": true,
+    "errors": [],
+    "supplyMicros": "1000000000000",
+    "wallets": 27,
+    "markets": 6,
+    "transfers": 1046,
+    "payouts": 0
+  }
+}

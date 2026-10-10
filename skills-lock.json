@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "lightweight-charts": {
+      "source": "tradingview/lightweight-charts",
+      "sourceType": "github",
+      "skillPath": ".github/skills/lightweight-charts/SKILL.md",
+      "computedHash": "556e8b55913f51637d0c947175cf5ef102d3f291bf8e266d096eada6361f26c4"
+    },
+    "lightweight-charts-plugin-authoring": {
+      "source": "tradingview/lightweight-charts",
+      "sourceType": "github",
+      "skillPath": ".github/skills/lightweight-charts-plugin-authoring/SKILL.md",
+      "computedHash": "0442c0da13cd84de7ade3c11ae14ad53c6ebb498e81af4f2fb5d7d8ffbf5985a"
+    },
+    "solana-dev": {
+      "source": "solana-foundation/solana-dev-skill",
+      "sourceType": "github",
+      "skillPath": "skills/solana-dev/SKILL.md",
+      "computedHash": "841c75d49657f6ee0bce0edea5e42dd982173e9b97c92b887bc87e21dd9809e4"
+    }
+  }
+}
