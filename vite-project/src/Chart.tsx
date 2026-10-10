@@ -39,11 +39,11 @@ export function MarketChart({
       autoSize: true,
       height: 330,
       layout: {
-        background: { type: ColorType.Solid, color: "#fffdf9" },
-        textColor: "#77736c",
+        background: { type: ColorType.Solid, color: "#111a20" },
+        textColor: "#b8c9c6",
         attributionLogo: true,
       },
-      grid: { vertLines: { visible: false }, horzLines: { color: "#eeeae3" } },
+      grid: { vertLines: { visible: false }, horzLines: { color: "#26363b" } },
       rightPriceScale: { borderVisible: false },
       timeScale: {
         borderVisible: false,
@@ -67,9 +67,9 @@ export function MarketChart({
       },
     });
     const price = chart.addSeries(AreaSeries, {
-      lineColor: "#bf243d",
-      topColor: "rgba(191,36,61,0.14)",
-      bottomColor: "rgba(191,36,61,0)",
+      lineColor: "#49e3a5",
+      topColor: "rgba(73,227,165,0.25)",
+      bottomColor: "rgba(73,227,165,0)",
       lineWidth: 2,
       priceFormat: {
         type: "custom",
@@ -82,7 +82,7 @@ export function MarketChart({
     const volume = chart.addSeries(
       HistogramSeries,
       {
-        color: "#e1d7cd",
+        color: "#4c8ecc",
         priceFormat: { type: "volume" },
       },
       1,

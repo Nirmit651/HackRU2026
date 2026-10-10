@@ -24,12 +24,8 @@ test("two clients: entry, buy, chart recovery, settlement, receipt and cash lead
     .fill("Browser trader");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.locator(".cash")).toHaveText("$R 1,000.00");
-  await page
-    .getByRole("button", { name: /Will the demo station reach 75/ })
-    .click();
-  await second
-    .getByRole("button", { name: /Will the demo station reach 75/ })
-    .click();
+  await page.locator(".market-row", { hasText: "Will the demo station reach 75" }).click();
+  await second.locator(".market-row", { hasText: "Will the demo station reach 75" }).click();
   await expect(
     page.getByRole("button", { name: "Buy 10 YES shares" }),
   ).toBeEnabled();

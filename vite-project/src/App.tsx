@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from "react";
 import { AutomationAdmin, AutomationDetails } from "./Automation";
+import { AuthDialog } from "./AuthDialog";
+import { DemoSimulation } from "./DemoSimulation";
 import {
   ArrowUpRight,
   ArrowLeft,
@@ -60,6 +62,16 @@ const payoutMultiple = (price: string | number) => {
 const multipleLabel = (price: string | number) =>
   `${payoutMultiple(price).toFixed(2)}×`;
 type Me = { displayName: string; admin: boolean; campus: string };
+function friendlyTradeError(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (/closed|not open/.test(message)) return "Market closed.";
+  if (/price|version|slippage/.test(message)) return "Price changed. Review the updated quote and try again.";
+  if (/insufficient|balance|fund/.test(message)) return "Insufficient funds.";
+  if (/quantity|share/.test(message)) return "Enter a valid number of shares.";
+  if (/auth|sign in|unauthor/.test(message)) return "Authentication required. Sign in to trade.";
+  if (/network|fetch|timeout/.test(message)) return "Network unavailable. Check your connection and try again.";
+  return "Unable to place this order. Try again.";
+}
 type Position = {
   id: string;
   yesShares: string;
@@ -86,6 +98,7 @@ export default function App() {
     [environmentId, setEnvironmentId] = useState(""),
     [markets, setMarkets] = useState<PublicMarket[]>([]),
     [selected, setSelected] = useState<PublicMarket | null>(null),
+    [selectedSide, setSelectedSide] = useState<"YES" | "NO">("YES"),
     [view, setView] = useState("markets"),
     [category, setCategory] = useState(""),
     [status, setStatus] = useState(""),
@@ -94,9 +107,6 @@ export default function App() {
     [balance, setBalance] = useState<string>("0"),
     [error, setError] = useState(""),
     [login, setLogin] = useState(false),
-    [loginName, setLoginName] = useState(""),
-    [loginPassword, setLoginPassword] = useState(""),
-    [authMode, setAuthMode] = useState<"signin" | "signup">("signup"),
     [notice, setNotice] = useState(""),
     [refresh, setRefresh] = useState(0);
   const env = envs.find((e) => e.id === environmentId);
@@ -170,44 +180,6 @@ export default function App() {
       stopped = true;
     };
   }, [refresh, selected?.id]);
-  async function signIn() {
-    setError("");
-    try {
-      if (config?.localDemoAuth) {
-        const r = await request<{ token: string }>("/demo/session", {
-          displayName: loginName || "Campus visitor",
-        });
-        sessionStorage.setItem("demo-token", r.token);
-        setMe(await request<Me>("/me"));
-        setLogin(false);
-      } else if (supabase) {
-        const email = loginName.trim();
-        const result =
-          authMode === "signup"
-            ? await supabase.auth.signUp({
-                email,
-                password: loginPassword,
-              })
-            : await supabase.auth.signInWithPassword({
-                email,
-                password: loginPassword,
-              });
-        if (result.error) throw result.error;
-        if (!result.data.session) {
-          setNotice(
-            "Account created. Check your email only if Supabase email confirmation is still enabled.",
-          );
-          setLogin(false);
-          return;
-        }
-        setMe(await request<Me>("/me"));
-        setLoginPassword("");
-        setLogin(false);
-      } else setError("Supabase Auth is not configured.");
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
   async function logout() {
     await supabase?.auth.signOut();
     sessionStorage.removeItem("demo-token");
@@ -297,6 +269,7 @@ export default function App() {
             </option>
           ))}
         </select>
+        <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
       </div>
       {error && (
         <div role="alert" className="alert">
@@ -376,11 +349,15 @@ export default function App() {
               {markets.map((m, i) => {
                 const Icon = icons[m.category];
                 return (
-                  <button
+                  <article
                     className="market-row"
                     key={m.id}
                     style={{ animationDelay: `${i * 40}ms` }}
-                    onClick={() => setSelected(m)}
+                    onClick={() => { setSelectedSide("YES"); setSelected(m); }}
+                    onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setSelectedSide("YES"); setSelected(m); } }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Open ${m.title}`}
                   >
                     <div className="market-name">
                       <div className="market-icon">
@@ -398,6 +375,14 @@ export default function App() {
                           {env?.kind === "DEMO" ? " · Synthetic scenario" : ""}
                         </p>
                       </div>
+                    </div>
+                    <div className="outcome-controls" aria-label={`Outcomes for ${m.title}`}>
+                      {(["YES", "NO"] as const).map((side) => {
+                        const price = side === "YES" ? Number(m.yesPrice) : 1 - Number(m.yesPrice);
+                        return <button key={side} className={`outcome-pill ${side.toLowerCase()}`} aria-label={`Select ${side} at ${(price * 100).toFixed(0)} percent`} onClick={(event) => { event.stopPropagation(); setSelectedSide(side); setSelected(m); }}>
+                          <span>{side}</span><strong>{(price * 100).toFixed(0)}%</strong><small>{multipleLabel(price)} return if correct</small>
+                        </button>;
+                      })}
                     </div>
                     <div className="probability">
                       <strong>
@@ -419,7 +404,7 @@ export default function App() {
                       <small>traded</small>
                     </div>
                     <ArrowUpRight className="row-arrow" size={20} />
-                  </button>
+                  </article>
                 );
               })}
             </div>
@@ -469,6 +454,7 @@ export default function App() {
               </div>
               <h1>{selected.title}</h1>
               <p>Closes {date(selected.closesAt)} · Buy and hold</p>
+              <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
             </div>
             <div className="detail-grid">
               <div className="detail-content">
@@ -539,6 +525,7 @@ export default function App() {
                 <TradeTicket
                   market={selected}
                   env={env}
+                  initialSide={selectedSide}
                   signedIn={!!me}
                   onLogin={() => setLogin(true)}
                   onTrade={() => {
@@ -547,7 +534,6 @@ export default function App() {
                       "Purchase confirmed. Your holdings and cash have updated.",
                     );
                   }}
-                  onError={setError}
                 />
                 {selected.category === "BUS_ARRIVAL" && (
                   <Suspense fallback={<p>Loading map…</p>}>
@@ -615,107 +601,34 @@ export default function App() {
         </span>
         <span>Built at HackRU.</span>
       </footer>
-      {login && (
-        <div className="modal-backdrop" onClick={() => setLogin(false)}>
-          <form
-            className="login-dialog"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              void signIn();
-            }}
-          >
-            <div className="eyebrow">WELCOME TO SCARLET</div>
-            {!config?.localDemoAuth && (
-              <div className="auth-mode" role="tablist" aria-label="Account mode">
-                <button
-                  type="button"
-                  className={authMode === "signup" ? "active" : ""}
-                  onClick={() => setAuthMode("signup")}
-                >
-                  Create account
-                </button>
-                <button
-                  type="button"
-                  className={authMode === "signin" ? "active" : ""}
-                  onClick={() => setAuthMode("signin")}
-                >
-                  Sign in
-                </button>
-              </div>
-            )}
-            <h2>
-              {config?.localDemoAuth
-                ? "Enter the local demo"
-                : authMode === "signup"
-                  ? "Create your account"
-                  : "Sign in to trade"}
-            </h2>
-            <p>
-              {config?.localDemoAuth
-                ? "A separate demo wallet starts with $R 1,000."
-                : "Use your email and a password. No magic-link email is required."}
-            </p>
-            <label>
-              {config?.localDemoAuth ? "Display name" : "Email"}
-              <input
-                autoFocus
-                type={config?.localDemoAuth ? "text" : "email"}
-                value={loginName}
-                onChange={(e) => setLoginName(e.target.value)}
-                required
-                maxLength={100}
-              />
-            </label>
-            {!config?.localDemoAuth && (
-              <label>
-                Password
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                />
-              </label>
-            )}
-            <button className="solid" type="submit">
-              {config?.localDemoAuth
-                ? "Continue"
-                : authMode === "signup"
-                  ? "Create account"
-                  : "Sign in"} <ArrowRight size={16} />
-            </button>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => setLogin(false)}
-            >
-              Cancel
-            </button>
-          </form>
-        </div>
-      )}
+      <AuthDialog
+        open={login}
+        config={config}
+        onClose={() => setLogin(false)}
+        onAuthenticated={(user) => {
+          setMe(user);
+          refreshAccount();
+        }}
+      />
     </div>
   );
 }
 function TradeTicket({
   market,
   env,
+  initialSide,
   signedIn,
   onLogin,
   onTrade,
-  onError,
 }: {
   market: PublicMarket;
   env?: EnvironmentView;
+  initialSide: "YES" | "NO";
   signedIn: boolean;
   onLogin: () => void;
   onTrade: () => void;
-  onError: (s: string) => void;
 }) {
-  const [side, setSide] = useState<"YES" | "NO">("YES"),
+  const [side, setSide] = useState<"YES" | "NO">(initialSide),
     [quantity, setQuantity] = useState(10),
     [quote, setQuote] = useState<{
       costMicros: string;
@@ -724,6 +637,7 @@ function TradeTicket({
     } | null>(null),
     [busy, setBusy] = useState(false),
     [quoteError, setQuoteError] = useState(""),
+    [tradeError, setTradeError] = useState(""),
     [pending, setPending] = useState<{
       key: string;
       max: string;
@@ -733,6 +647,10 @@ function TradeTicket({
     } | null>(null);
   const now = env?.kind === "DEMO" ? Date.parse(env.virtualNow!) : Date.now(),
     closed = market.status !== "OPEN" || now >= Date.parse(market.closesAt);
+  useEffect(() => {
+    setSide(initialSide);
+    setTradeError("");
+  }, [market.id, initialSide]);
   useEffect(() => {
     let active = true;
     setQuote(null);
@@ -765,6 +683,7 @@ function TradeTicket({
     }
     if (!quote) return;
     setBusy(true);
+    setTradeError("");
     const attempt =
       pending &&
       pending.side === side &&
@@ -790,7 +709,7 @@ function TradeTicket({
       setPending(null);
       onTrade();
     } catch (e) {
-      onError((e as Error).message);
+      setTradeError(friendlyTradeError(e));
     } finally {
       setBusy(false);
     }
@@ -838,18 +757,23 @@ function TradeTicket({
           </button>
         ))}
       </div>
+      <div className="chance-block" aria-live="polite">
+        <span>Market-implied chance of winning</span>
+        <strong>{(side === "YES" ? Number(market.yesPrice) * 100 : 100 - Number(market.yesPrice) * 100).toFixed(0)}%</strong>
+        <span>Chance of losing: {(side === "YES" ? 100 - Number(market.yesPrice) * 100 : Number(market.yesPrice) * 100).toFixed(0)}%</span>
+      </div>
       <dl className="trade-summary">
         <dt>Estimated cost</dt>
         <dd>{quote ? dollars(quote.costMicros, 6) : "—"}</dd>
-        <dt>Average / share</dt>
-        <dd>
+        <dt className="hidden-summary">Average / share</dt>
+        <dd className="hidden-summary">
           {quote ? dollars(BigInt(quote.costMicros) / BigInt(quantity)) : "—"}
         </dd>
-        <dt>
+        <dt className="hidden-summary">
           Maximum cost <small>(2% buffer)</small>
         </dt>
         <dd>{quote ? dollars(max, 6) : "—"}</dd>
-        <dt>Potential payout</dt>
+        <dt>Potential payout if correct</dt>
         <dd>{quote ? dollars(quote.winningPayoutMicros) : "—"}</dd>
         <dt>Return multiple</dt>
         <dd className="return-multiple">
@@ -857,7 +781,7 @@ function TradeTicket({
             ? `${(Number(quote.winningPayoutMicros) / Number(quote.costMicros)).toFixed(2)}×`
             : "—"}
         </dd>
-        <dt>Estimated profit</dt>
+        <dt>Estimated profit if correct</dt>
         <dd>{quote ? dollars(quote.netProfitMicros) : "—"}</dd>
       </dl>
       <button
@@ -874,7 +798,11 @@ function TradeTicket({
               : "Sign in to buy"}
         <ArrowRight size={16} />
       </button>
-      {quoteError && !closed && <p role="alert">{quoteError}</p>}
+      {(quoteError || tradeError) && !closed && (
+        <p className="trade-error" role="alert">
+          {tradeError || friendlyTradeError(new Error(quoteError))}
+        </p>
+      )}
       <p className="trade-fineprint">
         Your full order moves the price. Shares are held until settlement; they
         cannot be sold.
