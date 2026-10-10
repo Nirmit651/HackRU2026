@@ -37,7 +37,7 @@ const MarketChart = lazy(() =>
 const BusMap = lazy(() =>
   import("./BusMap").then((m) => ({ default: m.BusMap })),
 );
-import type { EnvironmentView, PublicMarket } from "../shared/contracts";
+import type { EnvironmentView, History, PublicMarket } from "../shared/contracts";
 import { categories, campuses } from "../shared/contracts";
 import "./App.css";
 import { marketTemplate } from "../shared/templates";
@@ -57,7 +57,6 @@ const icons = {
   STUDENT_ELECTION: Vote,
   VARSITY_SPORTS: Flag,
 };
-const percent = (price: string | number) => Number(price) * 100;
 const payoutMultiple = (price: string | number) => {
   const value = Number(price);
   return value > 0 ? 1 / value : 0;
@@ -95,6 +94,34 @@ type Receipt = {
   } | null;
   verification: { status: string };
 };
+function MarketSparkline({ market }: { market: PublicMarket }) {
+  const [values, setValues] = useState<number[]>([Number(market.yesPrice)]);
+  useEffect(() => {
+    let active = true;
+    if (market.status !== "OPEN") return;
+    request<History>(`/markets/${market.id}/history?range=1D`)
+      .then((history) => {
+        const prices = history.events
+          .map((event) => Number(event.yesPrice))
+          .filter((price) => Number.isFinite(price) && price >= 0 && price <= 1);
+        if (active && prices.length) setValues(prices);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [market.id, market.status, market.version]);
+  const points = values.slice(-32);
+  const coordinates = points.map((value, index) => {
+    const x = points.length === 1 ? 80 : (index / (points.length - 1)) * 160;
+    return `${x.toFixed(1)},${(42 - value * 38).toFixed(1)}`;
+  });
+  const line = coordinates.join(" ");
+  const fill = line ? `0,44 ${line} 160,44` : "";
+  return <svg className="market-sparkline" viewBox="0 0 160 44" role="img" aria-label="Market price history">
+    <title>Market price history</title>
+    {fill && <polygon points={fill} />}
+    {line && <polyline points={line} />}
+  </svg>;
+}
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null),
     [envs, setEnvs] = useState<EnvironmentView[]>([]),
@@ -372,10 +399,7 @@ export default function App() {
                     </div>
                     <h2>{m.title}</h2>
                     <div className="market-card-body">
-                      <svg className="market-sparkline" viewBox="0 0 160 44" role="img" aria-label="Price trend">
-                        <path d="M0 37 L14 31 L27 34 L41 24 L54 27 L67 17 L80 21 L93 12 L107 16 L120 10 L133 15 L146 7 L160 11 L160 44 L0 44 Z" />
-                        <polyline points="0,37 14,31 27,34 41,24 54,27 67,17 80,21 93,12 107,16 120,10 133,15 146,7 160,11" />
-                      </svg>
+                      <MarketSparkline market={m} />
                       <div className="card-probability">
                         <strong>{(yesPrice * 100).toFixed(0)}%</strong>
                         <span>YES PROBABILITY</span>
