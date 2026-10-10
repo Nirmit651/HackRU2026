@@ -8,6 +8,7 @@ process.env.LOCAL_DEMO_AUTH = "true";
 
 const appDir = process.cwd();
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const useShell = process.platform === "win32";
 const children: ChildProcess[] = [];
 
 function run(command: string, args: string[]) {
@@ -15,6 +16,8 @@ function run(command: string, args: string[]) {
     cwd: appDir,
     env: process.env,
     stdio: "inherit",
+    // Windows cannot exec a .cmd file directly. Let cmd.exe resolve npm.cmd.
+    shell: useShell,
   });
 }
 
@@ -23,6 +26,8 @@ function start(name: string, args: string[]) {
     cwd: appDir,
     env: process.env,
     stdio: "inherit",
+    // The same rule applies to the three long-running npm children.
+    shell: useShell,
   });
   child.on("exit", (code, signal) => {
     if (code && code !== 0) console.error(`${name} exited with code ${code}`);
