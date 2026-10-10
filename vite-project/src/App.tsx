@@ -19,6 +19,9 @@ import {
   Vote,
   Flag,
   LogOut,
+  Clock3,
+  FileText,
+  CircleHelp,
 } from "lucide-react";
 import {
   configure,
@@ -286,18 +289,29 @@ export default function App() {
       <main>
         {view === "markets" && !selected && (
           <>
-            <div className="page-heading">
-              <div className="eyebrow">RUTGERS PREDICTION MARKETS</div>
+            <div className="page-heading market-hero">
+              <div className="eyebrow">SCARLET MARKET · PLAY MONEY</div>
               <div className="headline-row">
-                <h1>Trade on what happens next.</h1>
+                <h1>
+                  Trade on what <em>happens next.</em>
+                </h1>
                 <p>
-                  Campus questions.
+                  Rutgers events. Clear odds.
                   <br />
-                  Clear odds. Play money.
+                  Your call, with play money.
                 </p>
               </div>
             </div>
             <div className="discovery-tools">
+              <label className="search">
+                <Search size={18} />
+                <input
+                  aria-label="Search markets"
+                  placeholder="Search markets (Rutgers, weather, buses...)"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </label>
               <div className="category-tabs">
                 <button
                   className={!category ? "active" : ""}
@@ -305,7 +319,9 @@ export default function App() {
                 >
                   All markets
                 </button>
-                {categories.map((c) => (
+                {categories
+                  .filter((c) => c !== "STUDENT_ELECTION")
+                  .map((c) => (
                   <button
                     key={c}
                     className={category === c ? "active" : ""}
@@ -313,44 +329,29 @@ export default function App() {
                   >
                     {labels[c]}
                   </button>
-                ))}
+                  ))}
               </div>
-              <div className="search-row">
-                <label className="search">
-                  <Search size={17} />
-                  <input
-                    aria-label="Search markets"
-                    placeholder="Search campus markets"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </label>
-                <select
-                  aria-label="Market status"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="">All statuses</option>
-                  {["OPEN", "PAUSED", "CLOSED", "RESOLVED", "VOIDED"].map(
-                    (s) => (
-                      <option key={s}>{s}</option>
-                    ),
-                  )}
-                </select>
-              </div>
-            </div>
-            <div className="market-list-head">
-              <span>EVENT / MARKET</span>
-              <span>YES PROBABILITY</span>
-              <span>ACTIVITY</span>
-              <span />
+              <select
+                aria-label="Market status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="">All statuses</option>
+                {["OPEN", "PAUSED", "CLOSED", "RESOLVED", "VOIDED"].map(
+                  (s) => (
+                    <option key={s}>{s}</option>
+                  ),
+                )}
+              </select>
             </div>
             <div className="market-list">
               {markets.map((m, i) => {
                 const Icon = icons[m.category];
+                const yesPrice = Number(m.yesPrice);
+                const noPrice = 1 - yesPrice;
                 return (
                   <article
-                    className="market-row"
+                    className="market-card"
                     key={m.id}
                     style={{ animationDelay: `${i * 40}ms` }}
                     onClick={() => { setSelectedSide("YES"); setSelected(m); }}
@@ -359,51 +360,40 @@ export default function App() {
                     role="button"
                     aria-label={`Open ${m.title}`}
                   >
-                    <div className="market-name">
-                      <div className="market-icon">
-                        <Icon size={24} strokeWidth={1.5} />
+                    <div className="market-card-top">
+                      <div className="market-meta">
+                        <span className="market-icon">
+                          <Icon size={17} strokeWidth={2} />
+                        </span>
+                        <span className="category-badge">{labels[m.category]}</span>
+                        <span className="market-status"><i />{m.status}</span>
                       </div>
-                      <div>
-                        <div className="market-meta">
-                          {labels[m.category]}
-                          <span>·</span>
-                          {m.status}
-                        </div>
-                        <h2>{m.title}</h2>
-                        <p>
-                          {date(m.closesAt)}
-                          {env?.kind === "DEMO" ? " · Synthetic scenario" : ""}
-                        </p>
+                      <span className="market-close">Closes {date(m.closesAt)}</span>
+                    </div>
+                    <h2>{m.title}</h2>
+                    <div className="market-card-body">
+                      <svg className="market-sparkline" viewBox="0 0 160 44" role="img" aria-label="Price trend">
+                        <path d="M0 37 L14 31 L27 34 L41 24 L54 27 L67 17 L80 21 L93 12 L107 16 L120 10 L133 15 L146 7 L160 11 L160 44 L0 44 Z" />
+                        <polyline points="0,37 14,31 27,34 41,24 54,27 67,17 80,21 93,12 107,16 120,10 133,15 146,7 160,11" />
+                      </svg>
+                      <div className="card-probability">
+                        <strong>{(yesPrice * 100).toFixed(0)}%</strong>
+                        <span>YES PROBABILITY</span>
+                        <small>{multipleLabel(yesPrice)} return if correct</small>
                       </div>
                     </div>
-                    <div className="outcome-controls" aria-label={`Outcomes for ${m.title}`}>
-                      {(["YES", "NO"] as const).map((side) => {
-                        const price = side === "YES" ? Number(m.yesPrice) : 1 - Number(m.yesPrice);
-                        return <button key={side} className={`outcome-pill ${side.toLowerCase()}`} aria-label={`Select ${side} at ${(price * 100).toFixed(0)} percent`} onClick={(event) => { event.stopPropagation(); setSelectedSide(side); setSelected(m); }}>
-                          <span>{side}</span><strong>{(price * 100).toFixed(0)}%</strong><small>{multipleLabel(price)} return if correct</small>
-                        </button>;
-                      })}
-                    </div>
-                    <div className="probability">
-                      <strong>
-                        {percent(m.yesPrice).toFixed(0)}
-                        <span>%</span>
-                      </strong>
-                      <span className="probability-no">
-                        NO {(100 - percent(m.yesPrice)).toFixed(0)}%
-                      </span>
-                      <div className="probability-track">
-                        <i style={{ width: `${percent(m.yesPrice)}%` }} />
+                    <div className="market-card-footer">
+                      <div className="market-contracts" aria-label={`Contracts for ${m.title}`}>
+                        <button className="contract-chip yes" onClick={(event) => { event.stopPropagation(); setSelectedSide("YES"); setSelected(m); }}>
+                          <span>YES</span><strong>$R {yesPrice.toFixed(2)}</strong>
+                        </button>
+                        <button className="contract-chip no" onClick={(event) => { event.stopPropagation(); setSelectedSide("NO"); setSelected(m); }}>
+                          <span>NO</span><strong>$R {noPrice.toFixed(2)}</strong>
+                        </button>
                       </div>
-                      <small>
-                        {multipleLabel(m.yesPrice)} YES · {multipleLabel(1 - Number(m.yesPrice))} NO
-                      </small>
+                      <span className="market-volume">{dollars(m.volumeMicros)}<small> traded</small></span>
+                      <button className="market-trade" onClick={(event) => { event.stopPropagation(); setSelectedSide("YES"); setSelected(m); }}>Trade</button>
                     </div>
-                    <div className="market-volume">
-                      {dollars(m.volumeMicros)}
-                      <small>traded</small>
-                    </div>
-                    <ArrowUpRight className="row-arrow" size={20} />
                   </article>
                 );
               })}
@@ -448,36 +438,59 @@ export default function App() {
               <ArrowLeft size={16} /> All markets
             </button>
             <div className="detail-heading">
-              <div className="eyebrow">
-                {labels[selected.category]} · {selected.status}
-                {env?.kind === "DEMO" ? " · SIMULATED" : ""}
+              <div className="detail-breadcrumb">
+                <span className="market-status"><i />{selected.status}</span>
+                <span>{labels[selected.category]}</span>
               </div>
               <h1>{selected.title}</h1>
-              <p>Closes {date(selected.closesAt)} · Buy and hold</p>
+              <p>
+                <Clock3 size={15} /> Closes {date(selected.closesAt)}
+                <span>•</span> Buy and hold
+                <a href="#resolution"><FileText size={14} /> Rules & resolution</a>
+              </p>
               <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
             </div>
             <div className="detail-grid">
               <div className="detail-content">
-                <div className="quote-head">
-                  <strong>
-                    {(Number(selected.yesPrice) * 100).toFixed(1)}
-                    <span>%</span>
-                  </strong>
+                <div className="quote-head probability-panel">
                   <div>
-                    Market-implied YES probability
-                    <small>
-                      NO {(100 - Number(selected.yesPrice) * 100).toFixed(1)}% ·
-                      Version {selected.version}
-                    </small>
+                    <strong>
+                      {(Number(selected.yesPrice) * 100).toFixed(1)}
+                      <span>%</span>
+                    </strong>
+                    <p>YES probability <CircleHelp size={14} /></p>
+                  </div>
+                  <div className="probability-context">
+                    <span>Market-implied chance, based on current trading.</span>
+                    <small>NO {(100 - Number(selected.yesPrice) * 100).toFixed(1)}% · Version {selected.version}</small>
                   </div>
                 </div>
                 <Suspense fallback={<p>Loading chart…</p>}>
                   <MarketChart market={selected} onUpdate={refreshAccount} />
                 </Suspense>
                 {me && <MarketHolding market={selected} refresh={refresh} />}
-                <div className="rules">
-                  <h2>How this market resolves</h2>
-                  <p>{selected.resolutionRule.yesCondition}</p>
+                <section className="rules" id="resolution">
+                  <div className="rules-heading">
+                    <div>
+                      <span className="eyebrow">MARKET BASICS</span>
+                      <h2>Rules & resolution</h2>
+                    </div>
+                    <a href={selected.sourceUrl} target="_blank" rel="noreferrer">Resolution source ↗</a>
+                  </div>
+                  <div className="market-definitions">
+                    <div>
+                      <strong>What is a market?</strong>
+                      <p>A prediction market is a question with two contracts. Its price is the market’s current estimate of the chance that the outcome happens.</p>
+                    </div>
+                    <div>
+                      <strong>What does YES or NO mean?</strong>
+                      <p>A YES contract pays $R 1 if the question resolves YES. A NO contract pays $R 1 if it resolves NO. Losing contracts pay $R 0.</p>
+                    </div>
+                    <div>
+                      <strong>How does this resolve?</strong>
+                      <p>{selected.resolutionRule.yesCondition}</p>
+                    </div>
+                  </div>
                   <AutomationDetails market={selected} />
                   <dl>
                     <dt>Observation window</dt>
@@ -513,7 +526,7 @@ export default function App() {
                       v{selected.ruleVersion} · {selected.ruleHash}
                     </dd>
                   </dl>
-                </div>
+                </section>
                 {["RESOLVED", "VOIDED"].includes(selected.status) && (
                   <ReceiptView
                     key={`${selected.id}:${me?.displayName ?? "public"}`}
@@ -716,8 +729,12 @@ function TradeTicket({
   }
   return (
     <section className="trade-ticket">
-      <div className="section-label">BUY SHARES</div>
-      <div className="side-picker">
+      <div className="trade-ticket-heading">
+        <h2>Trade</h2>
+        <span>Buy</span>
+      </div>
+      <div className="section-label">SELECT OUTCOME</div>
+      <div className="side-picker" aria-label="Select contract outcome">
         {(["YES", "NO"] as const).map((s) => (
           <button
             key={s}
@@ -758,9 +775,14 @@ function TradeTicket({
         ))}
       </div>
       <div className="chance-block" aria-live="polite">
-        <span>Market-implied chance of winning</span>
+        <span>{side} chance of winning</span>
         <strong>{(side === "YES" ? Number(market.yesPrice) * 100 : 100 - Number(market.yesPrice) * 100).toFixed(0)}%</strong>
-        <span>Chance of losing: {(side === "YES" ? 100 - Number(market.yesPrice) * 100 : Number(market.yesPrice) * 100).toFixed(0)}%</span>
+        <span>Market-implied probability</span>
+      </div>
+      <div className="profit-callout" aria-live="polite">
+        <span>Estimated profit if correct</span>
+        <strong>{quote ? dollars(quote.netProfitMicros) : "—"}</strong>
+        <small>Potential payout {quote ? dollars(quote.winningPayoutMicros) : "—"}</small>
       </div>
       <dl className="trade-summary">
         <dt>Estimated cost</dt>
@@ -781,8 +803,6 @@ function TradeTicket({
             ? `${(Number(quote.winningPayoutMicros) / Number(quote.costMicros)).toFixed(2)}×`
             : "—"}
         </dd>
-        <dt>Estimated profit if correct</dt>
-        <dd>{quote ? dollars(quote.netProfitMicros) : "—"}</dd>
       </dl>
       <button
         className="solid buy-button"

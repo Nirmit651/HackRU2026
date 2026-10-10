@@ -39,11 +39,14 @@ export function MarketChart({
       autoSize: true,
       height: 330,
       layout: {
-        background: { type: ColorType.Solid, color: "#111a20" },
-        textColor: "#b8c9c6",
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#858187",
         attributionLogo: true,
       },
-      grid: { vertLines: { visible: false }, horzLines: { color: "#26363b" } },
+      grid: {
+        vertLines: { color: "#f0eef0", visible: true },
+        horzLines: { color: "#ece9eb" },
+      },
       rightPriceScale: { borderVisible: false },
       timeScale: {
         borderVisible: false,
@@ -67,9 +70,9 @@ export function MarketChart({
       },
     });
     const price = chart.addSeries(AreaSeries, {
-      lineColor: "#49e3a5",
-      topColor: "rgba(73,227,165,0.25)",
-      bottomColor: "rgba(73,227,165,0)",
+      lineColor: "#d50b32",
+      topColor: "rgba(213,11,50,0.20)",
+      bottomColor: "rgba(213,11,50,0.015)",
       lineWidth: 2,
       priceFormat: {
         type: "custom",
@@ -82,7 +85,7 @@ export function MarketChart({
     const volume = chart.addSeries(
       HistogramSeries,
       {
-        color: "#4c8ecc",
+        color: "rgba(213,11,50,0.22)",
         priceFormat: { type: "volume" },
       },
       1,
@@ -126,7 +129,7 @@ export function MarketChart({
           .map((p) => ({
             time: p.time as UTCTimestamp,
             position: "aboveBar",
-            color: "#292924",
+            color: "#d50b32",
             shape: "circle",
             text: `Settled ${p.settled}`,
           })),
