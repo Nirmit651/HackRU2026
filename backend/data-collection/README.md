@@ -1,7 +1,8 @@
 # Rutgers bus collector
 
-This package performs one RUBus HTTP snapshot ingestion. It does not schedule
-collection or implement arrivals, ETAs, settlement, markets, or frontend APIs.
+This package collects RUBus HTTP snapshots. It does not implement arrivals,
+ETAs, settlement, markets, or frontend APIs; prediction-market work is outside
+this phase.
 
 ## Setup
 
@@ -32,6 +33,30 @@ Fetch and persist one attempt:
 ```bash
 python -m rutgers_bus_collector.cli
 ```
+
+Collect continuously (the default interval is 15 seconds):
+
+```bash
+python -m rutgers_bus_collector.cli --watch --interval 15
+```
+
+Continuously fetch and validate without database access:
+
+```bash
+python -m rutgers_bus_collector.cli --watch --dry-run --interval 15
+```
+
+`--interval` accepts whole seconds from 5 through 300. Watch attempts are
+sequential: after a successful attempt the collector waits that interval; after
+each consecutive failure it waits `min(120, interval * 2^(failures - 1))`.
+The failure count resets after success. Ctrl+C and SIGTERM stop promptly while
+waiting, and let an in-progress attempt finish before exiting. Each attempt
+writes one compact JSON summary to standard output.
+
+This phase assumes a single collector instance. There is no distributed lock,
+so do not run multiple instances against the same database. `demo.rubus.live`
+is the configured demonstration endpoint and must not automatically be treated
+as an authoritative live Rutgers source.
 
 The collector first commits a `running` collection attempt. The raw snapshot,
 valid normalized observations, route verification timestamps, and terminal run
