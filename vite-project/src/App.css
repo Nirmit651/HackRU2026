@@ -1998,3 +1998,63 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .market-tab-panel a { color: var(--scarlet); font-weight: 750; }
 .activity-row { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 14px; padding: 9px 0; border-bottom: 1px solid #efedef; }
 @media (max-width: 720px) { .market-detail-tabs { overflow-x: auto; } .market-detail-tabs button { flex: 0 0 auto; padding-inline: 14px; } .activity-row { grid-template-columns: 1fr; gap: 3px; } }
+
+/* Keep the trade ticket focused on order entry and settlement values. */
+.detail-content > .rules, .detail-heading a[href="#resolution"] { display: none; }
+.trade-ticket .side-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.trade-ticket .chance-block, .trade-ticket .profit-callout { display: none; }
+.trade-ticket .trade-summary { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px 16px; margin-top: 20px; }
+.trade-ticket .trade-summary dt:nth-of-type(4) { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid #ebe8eb; color: #5f5c63 !important; font-size: 13px !important; font-weight: 700 !important; text-align: center; }
+.trade-ticket .trade-summary dd:nth-of-type(4) { grid-column: 1 / -1; padding: 0; color: var(--scarlet) !important; font-size: 28px !important; font-weight: 820 !important; letter-spacing: -.04em; text-align: center; }
+
+/* Compact dark checkout styling. */
+.trade-ticket { padding: 0 !important; overflow: hidden; border: 2px solid #202428 !important; border-radius: 28px !important; background: #090d10 !important; color: #f0f1f2 !important; box-shadow: none !important; }
+.trade-ticket-heading { display: grid; grid-template-columns: auto auto 1fr; gap: 28px; align-items: center; min-height: 108px; margin: 0 !important; padding: 0 32px !important; border-bottom: 2px solid #202428 !important; }
+.trade-ticket-heading h2, .trade-ticket-heading span, .trade-ticket-heading strong { margin: 0; color: #f2f3f4; font-size: 25px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.trade-ticket-heading span { color: #606368; }
+.trade-ticket-heading strong { justify-self: end; font-size: 20px; }
+.trade-ticket .side-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 30px 32px 0; overflow: hidden; border-radius: 999px; background: #24292d; }
+.trade-ticket .side-picker button { justify-content: center; gap: 10px; min-height: 62px; padding: 12px; border: 0; border-radius: 999px; background: transparent; color: #f2f3f4; font-size: 22px; font-weight: 850; letter-spacing: .04em; }
+.trade-ticket .side-picker button span { color: inherit; font-size: inherit; }
+.trade-ticket .side-picker button.selected { background: #2dcc9c; color: #06130f; box-shadow: none; }
+.trade-ticket .quantity-label { display: block; margin: 30px 32px 0; }
+.trade-ticket .quantity-label input { width: 100%; height: 88px; margin: 0; padding: 0 22px; border: 2px solid #2a2f33; border-radius: 16px; background: transparent; color: #f4f5f6; font-size: 29px; font-weight: 700; }
+.trade-ticket .quantity-label input::placeholder { color: #93979c; opacity: 1; }
+.trade-ticket .quantity-presets { display: none; }
+.trade-ticket .trade-summary { margin: 28px 32px 32px !important; color: #a9adb2; }
+.trade-ticket .trade-summary dt, .trade-ticket .trade-summary dd, .trade-ticket .trade-summary dt:nth-of-type(n), .trade-ticket .trade-summary dd:nth-of-type(n) { color: #a9adb2 !important; font-size: 20px !important; font-weight: 500 !important; text-align: left; }
+.trade-ticket .trade-summary dd, .trade-ticket .trade-summary dd:nth-of-type(n) { justify-self: end; color: #f1f2f3 !important; font-size: 27px !important; font-weight: 750 !important; text-align: right; }
+.trade-ticket .trade-summary dt:nth-of-type(4), .trade-ticket .trade-summary dd:nth-of-type(4) { grid-column: auto; padding: 0; border: 0; text-align: left; }
+.trade-ticket .trade-summary dd:nth-of-type(4) { color: #f1f2f3 !important; font-size: 40px !important; font-weight: 820 !important; text-align: right; }
+.trade-ticket .trade-summary .return-multiple, .trade-ticket .trade-summary dt:nth-of-type(5) { display: none; }
+.trade-ticket .buy-button { width: calc(100% - 64px); min-height: 82px; margin: 0 32px 32px; border-radius: 999px; background: #2dcc9c; color: #06130f; font-size: 25px; font-weight: 800; }
+.trade-ticket .buy-button:disabled { opacity: .5; }
+.trade-ticket .trade-fineprint { display: none; }
+@media (max-width: 440px) { .trade-ticket-heading { min-height: 82px; gap: 17px; padding-inline: 20px !important; } .trade-ticket-heading h2, .trade-ticket-heading span { font-size: 19px; } .trade-ticket-heading strong { font-size: 15px; } .trade-ticket .side-picker, .trade-ticket .quantity-label { margin-inline: 20px; } .trade-ticket .trade-summary { margin-inline: 20px !important; } .trade-ticket .buy-button { width: calc(100% - 40px); margin-inline: 20px; } }
+
+/* Restore the original light Scarlet ticket scale while keeping blank share entry. */
+.trade-ticket { padding: 24px !important; overflow: visible; border: 1px solid #e7e3e6 !important; border-radius: 14px !important; background: #fff !important; color: var(--ink) !important; box-shadow: 0 12px 32px rgba(50, 25, 32, .08) !important; }
+.trade-ticket-heading { display: flex; min-height: auto; gap: 0; margin-bottom: 22px !important; padding: 0 0 13px !important; border-bottom: 1px solid #eeecee !important; }
+.trade-ticket-heading h2, .trade-ticket-heading span, .trade-ticket-heading strong { color: var(--ink); font-size: 23px; font-weight: 760; letter-spacing: -.04em; text-transform: none; }
+.trade-ticket-heading span { margin-left: auto; color: var(--scarlet); font-size: 13px; font-weight: 800; }
+.trade-ticket-heading strong { display: none; }
+.trade-ticket .side-picker { margin: 0; border: 0; border-radius: 10px; background: transparent; gap: 10px; }
+.trade-ticket .side-picker button { min-height: 0; padding: 15px 17px; border: 1px solid #e4e1e4; border-radius: 10px; background: #fff; color: #26242a; font-size: 14px; font-weight: 800; letter-spacing: 0; }
+.trade-ticket .side-picker button.selected { background: #fff6f7; color: var(--scarlet); border-color: var(--scarlet); box-shadow: inset 0 0 0 1px var(--scarlet); }
+.trade-ticket .quantity-label { margin: 22px 0 0; }
+.trade-ticket .quantity-label input { height: 62px; padding: 12px 16px; border: 1px solid #d9d5d9; border-radius: 10px; background: #fff; color: var(--ink); font-size: 28px; }
+.trade-ticket .quantity-presets { display: flex; }
+.trade-ticket .trade-summary { margin: 20px 0 !important; color: #777; }
+.trade-ticket .trade-summary dt, .trade-ticket .trade-summary dd, .trade-ticket .trade-summary dt:nth-of-type(n), .trade-ticket .trade-summary dd:nth-of-type(n) { color: #777 !important; font-size: 13px !important; font-weight: 600 !important; text-align: left; }
+.trade-ticket .trade-summary dd, .trade-ticket .trade-summary dd:nth-of-type(n) { color: var(--ink) !important; font-size: 14px !important; font-weight: 750 !important; text-align: right; }
+.trade-ticket .trade-summary dt:nth-of-type(4), .trade-ticket .trade-summary dd:nth-of-type(4) { grid-column: auto; padding: 0; border: 0; text-align: left; }
+.trade-ticket .trade-summary dd:nth-of-type(4) { color: var(--ink) !important; font-size: 16px !important; text-align: right; }
+.trade-ticket .buy-button { width: 100%; min-height: 56px; margin: 0; border-radius: 9px; background: var(--scarlet); color: #fff; font-size: 15px; font-weight: 800; }
+.trade-ticket .trade-fineprint { display: block; }
+@media (max-width: 440px) { .trade-ticket-heading { min-height: auto; padding-inline: 0 !important; } .trade-ticket .side-picker, .trade-ticket .quantity-label { margin-inline: 0; } .trade-ticket .trade-summary { margin-inline: 0 !important; } .trade-ticket .buy-button { width: 100%; margin-inline: 0; } }
+
+/* The ticket starts with direct quantity entry; preset buttons are omitted. */
+.trade-ticket .quantity-presets { display: none; }
+.trade-ticket-heading { justify-content: flex-start; gap: 24px; }
+.trade-ticket-heading h2 { color: var(--scarlet); }
+.trade-ticket-heading span { margin-left: 0; color: #77747b; }

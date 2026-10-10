@@ -668,11 +668,17 @@ function TradeTicket({
   onTrade: () => void;
 }) {
   const [side, setSide] = useState<"YES" | "NO">(initialSide),
-    [quantity, setQuantity] = useState(10),
+    [quantityText, setQuantityText] = useState(""),
     [quote, setQuote] = useState<{
       costMicros: string;
       winningPayoutMicros: string;
       netProfitMicros: string;
+    } | null>(null),
+    [quoteFor, setQuoteFor] = useState<{
+      marketId: string;
+      version: string;
+      side: "YES" | "NO";
+      quantity: number;
     } | null>(null),
     [busy, setBusy] = useState(false),
     [quoteError, setQuoteError] = useState(""),
@@ -683,7 +689,8 @@ function TradeTicket({
       side: string;
       quantity: number;
       marketId: string;
-    } | null>(null);
+    } | null>(null),
+    quantity = quantityText ? Number(quantityText) : 0;
   const now = env?.kind === "DEMO" ? Date.parse(env.virtualNow!) : Date.now(),
     closed = market.status !== "OPEN" || now >= Date.parse(market.closesAt);
   useEffect(() => {
@@ -691,9 +698,14 @@ function TradeTicket({
     setTradeError("");
   }, [market.id, initialSide]);
   useEffect(() => {
-    let active = true;
     setQuote(null);
-    if (!closed)
+    setQuoteFor(null);
+    setQuoteError("");
+    setQuantityText("");
+  }, [market.id]);
+  useEffect(() => {
+    let active = true;
+    if (!closed && quantity > 0)
       request<typeof quote>(`/markets/${market.id}/quote`, {
         environmentId: market.environmentId,
         side,
@@ -702,6 +714,7 @@ function TradeTicket({
         .then((q) => {
           if (active) {
             setQuote(q);
+            setQuoteFor({ marketId: market.id, version: market.version, side, quantity });
             setQuoteError("");
           }
         })
@@ -715,12 +728,18 @@ function TradeTicket({
   const max = quote
     ? ((BigInt(quote.costMicros) * 102n + 99n) / 100n).toString()
     : "0";
+  const quoteIsCurrent =
+    !!quote &&
+    quoteFor?.marketId === market.id &&
+    quoteFor.version === market.version &&
+    quoteFor.side === side &&
+    quoteFor.quantity === quantity;
   async function submit() {
     if (!signedIn) {
       onLogin();
       return;
     }
-    if (!quote) return;
+    if (quantity < 1 || !quoteIsCurrent) return;
     setBusy(true);
     setTradeError("");
     const attempt =
@@ -756,10 +775,10 @@ function TradeTicket({
   return (
     <section className="trade-ticket">
       <div className="trade-ticket-heading">
-        <h2>Trade</h2>
-        <span>Buy</span>
+        <h2>Buy</h2>
+        <span>Sell</span>
+        <strong>Shares⌄</strong>
       </div>
-      <div className="section-label">SELECT OUTCOME</div>
       <div className="side-picker" aria-label="Select contract outcome">
         {(["YES", "NO"] as const).map((s) => (
           <button
@@ -779,23 +798,23 @@ function TradeTicket({
         ))}
       </div>
       <label className="quantity-label">
-        Number of shares
         <input
           aria-label="Number of shares"
-          type="number"
-          min={1}
-          max={1000}
-          value={quantity}
-          onChange={(e) =>
-            setQuantity(
-              Math.max(1, Math.min(1000, Number(e.target.value) || 1)),
-            )
-          }
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          placeholder="Shares"
+          value={quantityText}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (!/^\d{0,4}$/.test(next)) return;
+            setQuantityText(next && Number(next) > 1000 ? "1000" : next);
+          }}
         />
       </label>
       <div className="quantity-presets">
         {[10, 25, 50, 100].map((n) => (
-          <button key={n} onClick={() => setQuantity(n)}>
+          <button key={n} onClick={() => setQuantityText(String(n))}>
             {n}
           </button>
         ))}
@@ -811,28 +830,30 @@ function TradeTicket({
         <small>Potential payout {quote ? dollars(quote.winningPayoutMicros) : "—"}</small>
       </div>
       <dl className="trade-summary">
-        <dt>Estimated cost</dt>
-        <dd>{quote ? dollars(quote.costMicros, 6) : "—"}</dd>
+        <dt>Cost</dt>
+        <dd>{quote && quantity > 0 ? dollars(quote.costMicros, 6) : "—"}</dd>
         <dt className="hidden-summary">Average / share</dt>
         <dd className="hidden-summary">
-          {quote ? dollars(BigInt(quote.costMicros) / BigInt(quantity)) : "—"}
+          {quote && quantity > 0
+            ? dollars(BigInt(quote.costMicros) / BigInt(quantity))
+            : "—"}
         </dd>
         <dt className="hidden-summary">
           Maximum cost <small>(2% buffer)</small>
         </dt>
         <dd>{quote ? dollars(max, 6) : "—"}</dd>
-        <dt>Potential payout if correct</dt>
-        <dd>{quote ? dollars(quote.winningPayoutMicros) : "—"}</dd>
+        <dt>Max payout</dt>
+        <dd>{quote && quantity > 0 ? dollars(quote.winningPayoutMicros) : "$R 0.00"}</dd>
         <dt>Return multiple</dt>
         <dd className="return-multiple">
-          {quote
+          {quote && quantity > 0
             ? `${(Number(quote.winningPayoutMicros) / Number(quote.costMicros)).toFixed(2)}×`
             : "—"}
         </dd>
       </dl>
       <button
         className="solid buy-button"
-        disabled={busy || closed || (!quote && signedIn)}
+        disabled={busy || closed || quantity < 1 || (!quoteIsCurrent && signedIn)}
         onClick={submit}
       >
         {busy
@@ -840,7 +861,9 @@ function TradeTicket({
           : closed
             ? "Trading closed"
             : signedIn
-              ? `Buy ${quantity} ${side} shares`
+              ? quantity > 0
+                ? `Buy ${quantity} ${side} shares`
+                : "Enter number of shares"
               : "Sign in to buy"}
         <ArrowRight size={16} />
       </button>
