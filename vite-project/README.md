@@ -73,8 +73,8 @@ invariant, event stream, chart and settlement service as participant orders.
 2. Click **Create presentation demo**, open the resulting card, then choose
    **Start presentation market**. The server stores one `startedAt` and a
    `deadlineAt` exactly 60 seconds later.
-3. Use **Finish presentation** before the deadline to settle YES. At the exact
-   deadline—or after a delayed worker wake—the stored deadline settles NO.
+3. Use **Finish presentation** before the deadline to settle NO. At the exact
+   deadline—or after a delayed worker wake—the stored deadline settles YES.
    The browser timer is display-only and reconstructs from those server values.
 4. Bot side changes sell their complete current side through `sell()` before
    a separate idempotent `buy()` call. They never directly edit positions,

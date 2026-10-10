@@ -18,15 +18,16 @@ export function timerYesSignal(elapsedSeconds: number) {
   return lerp(.96, .995, (t - 57) / 3);
 }
 export function presentationOutcome(deadlineAt: Date, finishedAt?: Date | null) {
-  return finishedAt && finishedAt < deadlineAt ? "YES" as const : "NO" as const;
+  return finishedAt && finishedAt < deadlineAt ? "NO" as const : "YES" as const;
 }
+export const presentationEventId = (runId: string) => `presentation-${runId}`;
 
 const now = () => new Date();
-const ruleFor = (opensAt: Date, closesAt: Date) => ({
+export const presentationRuleFor = (opensAt: Date, closesAt: Date, externalEventId = "presentation-demo") => ({
   canonicalizationVersion: "rutgers-v1" as const,
-  yesCondition: "A valid Finish presentation action is recorded by the server before the 60.000-second deadline.",
+  yesCondition: "No valid Finish presentation action is recorded before the 60.000-second deadline.",
   provider: "presentation-timer-v1",
-  externalEventId: "presentation-demo",
+  externalEventId,
   windowStart: opensAt.toISOString(), windowEnd: closesAt.toISOString(), cutoff: closesAt.toISOString(),
   units: "boolean", rounding: "Server clock comparison at 60.000 seconds.", finality: "FINAL" as const,
   missingPolicy: "PENDING_THEN_VOID" as const, voidAfter: new Date(+closesAt + 86_400_000).toISOString(),
@@ -39,17 +40,36 @@ export async function createPresentationDemo() {
     where: { status: { in: ["READY", "RUNNING", "PAUSED"] } },
     include: { market: true }, orderBy: { createdAt: "desc" },
   });
-  if (active) return { ...active, creationReplayed: true };
+  if (active) {
+    // A not-yet-started demo is safe to refresh to the current wording before
+    // any order or settlement commitment exists.
+    if (active.status === "READY" && active.market.status === "DRAFT") {
+      const externalEventId = presentationEventId(active.id);
+      const rule = presentationRuleFor(active.market.opensAt, active.market.closesAt, externalEventId);
+      const market = await db.market.update({
+        where: { id: active.marketId },
+        data: {
+          title: "Will this presentation last more than 60 seconds?",
+          description: "YES resolves when the timer reaches 60 seconds without an early Finish presentation action. NO resolves when Finish presentation is recorded before 60 seconds.",
+          externalEventId,
+          resolutionRule: rule,
+          ruleHash: hash(rule),
+        },
+      });
+      return { ...active, market, creationReplayed: true };
+    }
+    return { ...active, creationReplayed: true };
+  }
   let env = await db.environment.findFirst({ where: { kind: "LIVE" }, orderBy: { createdAt: "desc" } });
   if (!env) env = await createLive(`presentation-${randomUUID().slice(0, 8)}`);
-  const createdAt = now(), provisionalDeadline = new Date(+createdAt + 3_600_000), rule = ruleFor(createdAt, provisionalDeadline);
+  const createdAt = now(), provisionalDeadline = new Date(+createdAt + 3_600_000), rule = presentationRuleFor(createdAt, provisionalDeadline);
   const sequence = await db.presentationDemoRun.count();
   const market = await transaction(async (tx) => {
     const treasury = await tx.wallet.findFirstOrThrow({ where: { environmentId: env!.id, kind: "TREASURY" } });
     const maker = await tx.wallet.create({ data: { environmentId: env!.id, kind: "MARKET_MAKER" } });
     await lockWallets(tx, [treasury.id, maker.id]);
     await transfer(tx, env!.id, treasury.id, maker.id, 100_000_000n, "MARKET_FUNDING", `fund:presentation:${sequence + 1}`, maker.id, createdAt);
-    return tx.market.create({ data: { environmentId: env!.id, slug: `presentation-demo-${sequence + 1}-${randomUUID().slice(0, 6)}`, title: `Presentation Demo #${sequence + 1}: Will this presentation last less than 60 seconds?`, description: "YES resolves when Finish presentation is recorded before 60 seconds. Otherwise, NO resolves automatically at 60 seconds. Prices and volume come only from committed simulated and participant orders.", category: "PRESENTATION_DEMO", status: "DRAFT", opensAt: createdAt, closesAt: provisionalDeadline, expectedResolutionAt: provisionalDeadline, resolutionRule: rule, ruleHash: hash(rule), provider: rule.provider, sourceUrl: "https://scarlet.market/presentation-demo-timer", externalEventId: `presentation-${sequence + 1}`, context: { presentationDemo: true, durationSeconds: 60, simulated: true }, marketMakerWalletId: maker.id, liquidityBMicros: 100_000_000n } });
+    return tx.market.create({ data: { environmentId: env!.id, slug: `presentation-demo-${sequence + 1}-${randomUUID().slice(0, 6)}`, title: "Will this presentation last more than 60 seconds?", description: "YES resolves when the timer reaches 60 seconds without an early Finish presentation action. NO resolves when Finish presentation is recorded before 60 seconds. Prices and volume come only from committed simulated and participant orders.", category: "PRESENTATION_DEMO", status: "DRAFT", opensAt: createdAt, closesAt: provisionalDeadline, expectedResolutionAt: provisionalDeadline, resolutionRule: rule, ruleHash: hash(rule), provider: rule.provider, sourceUrl: "https://scarlet.market/presentation-demo-timer", externalEventId: `presentation-${sequence + 1}`, context: { presentationDemo: true, durationSeconds: 60, simulated: true }, marketMakerWalletId: maker.id, liquidityBMicros: 100_000_000n } });
   });
   const run = await db.presentationDemoRun.create({ data: { marketId: market.id, environmentId: env.id, seed: Math.floor(Math.random() * 2_147_483_647) } });
   for (let i = 0; i < BOT_NAMES.length; i++) {
@@ -68,9 +88,9 @@ export async function startPresentation(marketId: string) {
   const run = await transaction(async (tx) => {
     const run = await tx.presentationDemoRun.findUniqueOrThrow({ where: { marketId } });
     if (run.startedAt) return run;
-    const market = await lockMarket(tx, marketId), startedAt = await clock(tx, market.environmentId), deadlineAt = new Date(+startedAt + 60_000), rule = ruleFor(startedAt, deadlineAt);
+    const market = await lockMarket(tx, marketId), startedAt = await clock(tx, market.environmentId), deadlineAt = new Date(+startedAt + 60_000), externalEventId = presentationEventId(run.id), rule = presentationRuleFor(startedAt, deadlineAt, externalEventId);
     ensure(market.status === "DRAFT", "INVALID_TRANSITION", 409);
-    const updated = await tx.market.update({ where: { id: marketId }, data: { opensAt: startedAt, closesAt: deadlineAt, expectedResolutionAt: deadlineAt, resolutionRule: rule, ruleHash: hash(rule), externalEventId: `presentation-${run.id}`, status: "OPEN", version: { increment: 1 } } });
+    const updated = await tx.market.update({ where: { id: marketId }, data: { opensAt: startedAt, closesAt: deadlineAt, expectedResolutionAt: deadlineAt, resolutionRule: rule, ruleHash: hash(rule), externalEventId, status: "OPEN", version: { increment: 1 } } });
     await appendEvent(tx, updated, "OPENED", startedAt, { presentationDemo: true, startedAt: startedAt.toISOString(), deadlineAt: deadlineAt.toISOString() });
     return tx.presentationDemoRun.update({ where: { id: run.id }, data: { status: "RUNNING", startedAt, deadlineAt, workflowRunId: `db-runner:${run.id}` } });
   });
@@ -79,7 +99,7 @@ export async function startPresentation(marketId: string) {
 
 function evidence(run: { id: string; marketId: string; startedAt: Date | null; deadlineAt: Date | null; finishedAt: Date | null }, outcome: "YES" | "NO", checkedAt: Date): ProviderEvidence {
   const elapsed = run.startedAt ? Math.max(0, checkedAt.getTime() - run.startedAt.getTime()) : 0;
-  return { provider: "presentation-timer-v1", externalEventId: `presentation-${run.id}`, observedAt: (outcome === "YES" ? run.finishedAt! : run.deadlineAt!).toISOString(), receivedAt: checkedAt.toISOString(), isFinal: true, sourceUrl: "https://scarlet.market/presentation-demo-timer", normalizedData: { units: "boolean", result: outcome === "YES", channelsChecked: ["Server-authoritative presentation timer"] }, rawPayload: { runId: run.id, startedAt: run.startedAt?.toISOString(), deadlineAt: run.deadlineAt?.toISOString(), finishedAt: run.finishedAt?.toISOString(), checkedAt: checkedAt.toISOString(), elapsedMilliseconds: elapsed, outcome } };
+  return { provider: "presentation-timer-v1", externalEventId: presentationEventId(run.id), observedAt: (outcome === "NO" ? run.finishedAt! : run.deadlineAt!).toISOString(), receivedAt: checkedAt.toISOString(), isFinal: true, sourceUrl: "https://scarlet.market/presentation-demo-timer", normalizedData: { units: "boolean", result: outcome === "YES", channelsChecked: ["Server-authoritative presentation timer"] }, rawPayload: { runId: run.id, startedAt: run.startedAt?.toISOString(), deadlineAt: run.deadlineAt?.toISOString(), finishedAt: run.finishedAt?.toISOString(), checkedAt: checkedAt.toISOString(), elapsedMilliseconds: elapsed, outcome } };
 }
 
 export async function finishPresentation(marketId: string) {
@@ -113,7 +133,7 @@ async function resolvePresentationDeadline(marketId: string) {
   });
   const run = result.run;
   if (!run.outcome || !run.startedAt || !run.deadlineAt) return run;
-  await settle(marketId, evidence(run, "NO", result.checkedAt), undefined, { allowEarly: true, resolverVersion: "presentation-timer-v1", receiptExtra: { presentationDemo: { runId: run.id, startedAt: run.startedAt.toISOString(), deadlineAt: run.deadlineAt.toISOString(), finishedAt: null, resolutionMethod: "Presentation Demo Timer" } } }).catch((error) => { if ((error as { code?: string }).code !== "SETTLEMENT_CONFLICT") throw error; });
+  await settle(marketId, evidence(run, run.outcome as "YES" | "NO", result.checkedAt), undefined, { allowEarly: true, resolverVersion: "presentation-timer-v1", receiptExtra: { presentationDemo: { runId: run.id, startedAt: run.startedAt.toISOString(), deadlineAt: run.deadlineAt.toISOString(), finishedAt: null, resolutionMethod: "Presentation Demo Timer" } } }).catch((error) => { if ((error as { code?: string }).code !== "SETTLEMENT_CONFLICT") throw error; });
   return presentationStatus(marketId);
 }
 

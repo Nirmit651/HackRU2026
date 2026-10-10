@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { presentationOutcome, timerYesSignal } from "../server/presentation";
+import { presentationEventId, presentationOutcome, presentationRuleFor, timerYesSignal } from "../server/presentation";
 
 describe("presentation timer signal", () => {
   it("starts neutral and approaches certainty without forcing 100%", () => {
@@ -19,11 +19,17 @@ describe("presentation timer signal", () => {
 
 describe("presentation settlement rule", () => {
   const deadline = new Date("2026-10-10T12:01:00.000Z");
-  it("settles YES only for a server-recorded finish before 60 seconds", () => {
-    expect(presentationOutcome(deadline, new Date("2026-10-10T12:00:59.999Z"))).toBe("YES");
-    expect(presentationOutcome(deadline, new Date("2026-10-10T12:01:00.000Z"))).toBe("NO");
+  it("settles NO for a server-recorded finish before 60 seconds", () => {
+    expect(presentationOutcome(deadline, new Date("2026-10-10T12:00:59.999Z"))).toBe("NO");
+    expect(presentationOutcome(deadline, new Date("2026-10-10T12:01:00.000Z"))).toBe("YES");
   });
-  it("settles NO if no finish was recorded by the deadline", () => {
-    expect(presentationOutcome(deadline)).toBe("NO");
+  it("settles YES if no finish was recorded by the deadline", () => {
+    expect(presentationOutcome(deadline)).toBe("YES");
+  });
+  it("uses one run-specific ID for both the market rule and its evidence", () => {
+    const runId = "f6fd29b3-6df6-4e90-a3c2-61d5d6c23401";
+    const eventId = presentationEventId(runId);
+    expect(eventId).toBe("presentation-f6fd29b3-6df6-4e90-a3c2-61d5d6c23401");
+    expect(presentationRuleFor(deadline, deadline, eventId).externalEventId).toBe(eventId);
   });
 });

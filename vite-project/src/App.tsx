@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from "react";
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
 import { AutomationAdmin, AutomationDetails } from "./Automation";
 import { AuthDialog } from "./AuthDialog";
 import { DemoSimulation } from "./DemoSimulation";
@@ -60,6 +60,25 @@ const payoutMultiple = (price: string | number) => {
 };
 const multipleLabel = (price: string | number) =>
   `${payoutMultiple(price).toFixed(2)}×`;
+function AnimatedProbability({ value }: { value: number }) {
+  const [displayed, setDisplayed] = useState(value);
+  const prior = useRef(value);
+  useEffect(() => {
+    const from = prior.current, started = performance.now(), duration = 520;
+    let frame = 0;
+    const animate = (time: number) => {
+      const progress = Math.min(1, (time - started) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const next = from + (value - from) * eased;
+      setDisplayed(next);
+      if (progress < 1) frame = requestAnimationFrame(animate);
+      else prior.current = value;
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return <>{displayed.toFixed(1)}</>;
+}
 type Me = { displayName: string; admin: boolean; campus: string };
 function friendlyTradeError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
@@ -494,7 +513,7 @@ export default function App() {
                 <div className="quote-head probability-panel">
                   <div>
                     <strong>
-                      {(Number(selected.yesPrice) * 100).toFixed(1)}
+                      <AnimatedProbability key={selected.id} value={Number(selected.yesPrice) * 100} />
                       <span>%</span>
                     </strong>
                     <p>YES probability <CircleHelp size={14} /></p>
@@ -887,7 +906,7 @@ function TradeTicket({
         {(["YES", "NO"] as const).map((s) => (
           <button
             key={s}
-            className={side === s ? "selected" : ""}
+            className={`${s.toLowerCase()}-side ${side === s ? "selected" : ""}`}
             disabled={
               (action === "BUY" && BigInt(s === "YES" ? position?.noShares ?? "0" : position?.yesShares ?? "0") !== 0n) ||
               (action === "SELL" && signedIn && BigInt(s === "YES" ? position?.yesShares ?? "0" : position?.noShares ?? "0") === 0n)
