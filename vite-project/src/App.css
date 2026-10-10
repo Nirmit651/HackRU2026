@@ -2080,3 +2080,10 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .presentation-stats { color: #6c6266; font-size: 13px; }
 .presentation-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
 .presentation-controls .danger { background: #9e102c; }
+.modal-backdrop { position: fixed !important; inset: 0 !important; z-index: 1000 !important; display: grid !important; place-items: center !important; padding: 20px; background: rgba(22, 14, 17, .62) !important; backdrop-filter: blur(7px) !important; }
+.auth-dialog { position: relative; width: min(430px, 100%); padding: 32px; border: 1px solid #ead7dc; border-radius: 16px; background: #fff; color: #171216; box-shadow: 0 30px 90px rgba(32, 13, 20, .3); }
+.auth-dialog h2 { margin: 8px 0; font-size: 28px; }
+.auth-dialog p { color: #625a5e; line-height: 1.5; }
+.auth-dialog label { display: grid; gap: 7px; margin: 20px 0; color: #4e4549; font-size: 13px; font-weight: 700; }
+.auth-dialog input { width: 100%; padding: 12px; border: 1px solid #d6cbd0; border-radius: 8px; background: #fff; color: #171216; font: inherit; }
+.auth-dialog .solid { width: 100%; justify-content: center; }

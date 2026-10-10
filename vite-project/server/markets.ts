@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ruleSchema, categories } from "../shared/contracts";
+import { ruleSchema, marketCategories } from "../shared/contracts";
 import { transaction, lockEnvironment, lockWallets, ensure, clock } from "./db";
 import { transfer } from "./engine";
 import { hash } from "./math";
@@ -8,7 +8,7 @@ export const createMarketInput = z.object({
   slug: z.string().regex(/^[a-z0-9-]{3,80}$/),
   title: z.string().min(10).max(180),
   description: z.string().max(2000),
-  category: z.enum(categories),
+  category: z.enum(marketCategories),
   opensAt: z.iso.datetime(),
   closesAt: z.iso.datetime(),
   expectedResolutionAt: z.iso.datetime(),

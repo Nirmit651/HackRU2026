@@ -20,8 +20,6 @@ export const titles = [
   "Will the demo station reach 75°F?",
   "Will the demo LX reach Livingston on time?",
   "Will the demo station record 0.10 inches of rain?",
-  "Will the demo organizer announce a concert?",
-  "Will candidate Scarlet win the demo election?",
   "Will Rutgers win the simulated football game?",
 ];
 
@@ -38,7 +36,7 @@ function random01(seed: number, tick: number, salt: number) {
   return (value >>> 0) / 4294967296;
 }
 
-const demoSentiment = [0.82, 0.68, 0.28, 0.63, 0.2, 0.76];
+const demoSentiment = [0.82, 0.68, 0.28, 0.76];
 export async function newDemo(
   seed = 2026,
   key = `demo-${randomUUID().slice(0, 8)}`,
@@ -199,7 +197,7 @@ export function fixture(
         ? { value: 77 }
         : m.category === "RAINFALL"
           ? { value: 0.06 }
-          : { result: m.category !== "STUDENT_ELECTION" }),
+          : { result: true }),
       channelsChecked: ["Synthetic official-channel fixture"],
     },
     rawPayload: { fixtureVersion: "campus-v1", synthetic: true },

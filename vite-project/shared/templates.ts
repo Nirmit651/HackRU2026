@@ -12,14 +12,8 @@ export function marketTemplate(category: Category, environmentId: string) {
       "The named station observes at least 0.10 inches of accumulated precipitation during the window.",
     BUS_ARRIVAL:
       "The identified route and trip reaches the named stop before the observation window ends.",
-    CONCERT:
-      "The named official organizer announces the specified artist/event by the deadline.",
-    STUDENT_ELECTION:
-      "The named candidate wins the identified election according to official final results.",
     VARSITY_SPORTS:
       "Rutgers wins the identified scheduled game according to the final provider result.",
-    PRESENTATION_DEMO:
-      "The server-authoritative presentation timer reaches sixty seconds before a valid finish action.",
   };
   const rule: Rule = ruleSchema.parse({
     canonicalizationVersion: "rutgers-v1",

@@ -3,11 +3,9 @@ export const categories = [
   "TEMPERATURE",
   "BUS_ARRIVAL",
   "RAINFALL",
-  "CONCERT",
-  "STUDENT_ELECTION",
   "VARSITY_SPORTS",
-  "PRESENTATION_DEMO",
 ] as const;
+export const marketCategories = [...categories, "PRESENTATION_DEMO"] as const;
 export const campuses = [
   "BUSCH",
   "LIVINGSTON",
@@ -114,7 +112,7 @@ export interface PublicMarket {
   slug: string;
   title: string;
   description: string;
-  category: (typeof categories)[number];
+  category: (typeof marketCategories)[number];
   status: string;
   opensAt: string;
   closesAt: string;

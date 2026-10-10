@@ -15,8 +15,6 @@ import {
   Sun,
   Bus,
   CloudRain,
-  Music,
-  Vote,
   Flag,
   LogOut,
   Clock3,
@@ -46,8 +44,6 @@ const labels: Record<string, string> = {
   TEMPERATURE: "Temperature",
   BUS_ARRIVAL: "Bus arrivals",
   RAINFALL: "Rainfall",
-  CONCERT: "Concerts",
-  STUDENT_ELECTION: "Elections",
   VARSITY_SPORTS: "Varsity sports",
   PRESENTATION_DEMO: "Presentation demo",
 };
@@ -55,8 +51,6 @@ const icons = {
   TEMPERATURE: Sun,
   BUS_ARRIVAL: Bus,
   RAINFALL: CloudRain,
-  CONCERT: Music,
-  STUDENT_ELECTION: Vote,
   VARSITY_SPORTS: Flag,
   PRESENTATION_DEMO: Timer,
 };
@@ -263,7 +257,7 @@ export default function App() {
             className="outline demo-admin-button"
             onClick={() =>
               demoAdmin
-                ? request("/demo-admin/session", undefined, "DELETE").then(() => setDemoAdmin(false))
+                ? request("/demo-admin/session", undefined, "DELETE").finally(() => setDemoAdmin(false))
                 : setDemoAdminLogin(true)
             }
           >
@@ -368,9 +362,7 @@ export default function App() {
                 >
                   All markets
                 </button>
-                {categories
-                  .filter((c) => c !== "STUDENT_ELECTION")
-                  .map((c) => (
+                {categories.map((c) => (
                   <button
                     key={c}
                     className={category === c ? "active" : ""}

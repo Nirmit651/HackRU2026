@@ -276,7 +276,7 @@ describe("PostgreSQL financial invariants", () => {
       slug: "clock-test",
       title: "Authoritative clock lock race",
       description: "test",
-      category: "CONCERT",
+      category: "RAINFALL",
       opensAt: open.toISOString(),
       closesAt: close.toISOString(),
       expectedResolutionAt: end.toISOString(),

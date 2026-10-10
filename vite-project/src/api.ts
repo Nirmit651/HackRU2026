@@ -31,9 +31,16 @@ export async function request<T>(
     body: body ? JSON.stringify(body) : undefined,
     credentials: "include",
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error?.code ?? "Request failed");
-  return data;
+  // DELETE session endpoints intentionally return 204.  Parse defensively so
+  // an empty response or an upstream HTML error never leaves UI state stale.
+  const text = await r.text();
+  const data = text ? (() => { try { return JSON.parse(text); } catch { return null; } })() : null;
+  if (!r.ok) {
+    if (!data && text.trimStart().startsWith("<"))
+      throw new Error("API_ROUTE_UNAVAILABLE");
+    throw new Error(data?.error?.code ?? "Request failed");
+  }
+  return data as T;
 }
 export const dollars = (value: string | bigint, precision: 2 | 6 = 2) => {
   const n = BigInt(value),

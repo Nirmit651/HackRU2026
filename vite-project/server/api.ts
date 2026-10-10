@@ -5,6 +5,7 @@ import { z, ZodError } from "zod";
 import { db, AppError, ensure } from "./db";
 import {
   categories,
+  marketCategories,
   campuses,
   buyInput,
   sellInput,
@@ -97,22 +98,23 @@ app.delete("/api/demo-admin/session", (_req, res) => {
   res.setHeader("Set-Cookie", "scarlet_demo_admin=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
   res.status(204).end();
 });
-app.get("/api/environments", async (_req, res) =>
-  res.json(
-    await db.environment.findMany({
-      select: {
+app.get("/api/environments", async (_req, res) => {
+  const select = {
+    select: {
         id: true,
         key: true,
         kind: true,
         virtualNow: true,
         runState: true,
         speed: true,
-      },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-  ),
-);
+    },
+  } as const;
+  const [live, demo] = await Promise.all([
+    db.environment.findFirst({ where: { kind: "LIVE" }, orderBy: { createdAt: "desc" }, ...select }),
+    db.environment.findFirst({ where: { kind: "DEMO" }, orderBy: { createdAt: "desc" }, ...select }),
+  ]);
+  res.json([live, demo].filter(Boolean));
+});
 app.post("/api/demo/session", async (req, res) => {
   ensure(localDemo, "NOT_FOUND", 404);
   const input = z
@@ -153,7 +155,7 @@ app.get("/api/markets", async (req, res) => {
   const input = z
     .object({
       environmentId: z.uuid(),
-      category: z.enum(categories).optional(),
+      category: z.enum(marketCategories).optional(),
       status: z
         .enum(["DRAFT", "OPEN", "PAUSED", "CLOSED", "RESOLVED", "VOIDED"])
         .optional(),
@@ -166,6 +168,7 @@ app.get("/api/markets", async (req, res) => {
     where: {
       environmentId: input.environmentId,
       category: input.category,
+      NOT: { category: { in: ["CONCERT", "STUDENT_ELECTION"] } },
       status: input.status,
       title: input.search
         ? { contains: input.search, mode: "insensitive" }
