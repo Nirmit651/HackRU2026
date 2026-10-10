@@ -1,5 +1,7 @@
 # Scarlet Exchange
 
+Automated temperature, bus stop-duration, football and men's basketball markets are implemented in `server/automation`. See [automation setup, policies, credentials, commands and verification](docs/AUTOMATION.md). They reuse the existing funding, trading, settlement and event services. Generators start disabled until configured in Admin.
+
 A Rutgers campus prediction-market demo for HackRU 2026. Students spend **play $R**, buy YES/NO shares, receive settlement receipts, and compete by **cash balance**. No purchase, cash-out, secondary selling, or official Rutgers affiliation.
 
 The existing repository was a Vite React starter with no Supabase/Tiger application code. This implementation preserves Vite/npm and adds a TypeScript Express API/worker and Prisma 7 PostgreSQL engine. Intended sponsor submissions: **Lucera + Tiger Data**, **Maverick** track. Optional Solana functionality is separate from prize selection; no third submission is assumed.

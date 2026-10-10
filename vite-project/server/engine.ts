@@ -344,7 +344,7 @@ export async function lifecycle(
         rule.provider === market.provider &&
           rule.externalEventId === market.externalEventId &&
           rule.cutoff === market.closesAt.toISOString() &&
-          new Date(rule.windowStart) > market.closesAt,
+          (rule.automation || new Date(rule.windowStart) > market.closesAt),
         "INVALID_FROZEN_RULE",
       );
       ensure(
@@ -380,7 +380,9 @@ export async function lifecycle(
     await appendEvent(
       tx,
       updated,
-      market.status === "DRAFT" ? "OPENED" : "STATUS_CHANGED",
+      market.status === "DRAFT" && status === "OPEN"
+        ? "OPENED"
+        : "STATUS_CHANGED",
       at,
       { status },
     );
@@ -425,7 +427,11 @@ export function resolveOutcome(m: Market, raw: ProviderEvidence, at: Date) {
     "INVALID_EVIDENCE",
   );
   return (
-    r.comparison === "GTE" ? d.value >= r.threshold : d.value <= r.threshold
+    r.comparison === "GT"
+      ? d.value > r.threshold
+      : r.comparison === "GTE"
+        ? d.value >= r.threshold
+        : d.value <= r.threshold
   )
     ? ("YES" as const)
     : ("NO" as const);
@@ -460,7 +466,10 @@ export async function settle(
       return existing;
     }
     ensure(
-      market.status !== "DRAFT" && at >= market.closesAt,
+      market.status !== "DRAFT" &&
+        (at >= market.closesAt ||
+          (market.status === "CLOSED" &&
+            !!ruleSchema.parse(market.resolutionRule).automation)),
       "MARKET_NOT_CLOSED",
       409,
     );

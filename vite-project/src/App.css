@@ -843,8 +843,13 @@ dd {
   margin-top: 15px;
 }
 .admin-section {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 25px 0;
   border-top: 1px solid #e0d4c2;
+}
+.admin-section select {
+  max-width: 100% !important;
 }
 .admin-section h2 {
   font-size: 21px;

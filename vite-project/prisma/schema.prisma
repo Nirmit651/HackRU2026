@@ -154,6 +154,8 @@ model Market {
   provider             String
   sourceUrl            String
   externalEventId      String?
+  generatorKey         String?
+  templateVersion      Int?
   context              Json
   marketMakerWalletId  String            @unique @db.Uuid
   liquidityBMicros     BigInt            @default(100000000)
@@ -174,10 +176,71 @@ model Market {
   commitments          ChainCommitment[]
 
   @@unique([environmentId, slug])
+  @@unique([environmentId, generatorKey])
   @@unique([marketMakerWalletId, environmentId])
   @@unique([id, environmentId])
   @@index([environmentId, status, category, closesAt])
   @@map("markets")
+}
+
+model AutomationConfig {
+  id String @id @default(uuid()) @db.Uuid
+  environmentId String @db.Uuid
+  type String
+  enabled Boolean @default(false)
+  version Int @default(1)
+  settings Json
+  nextRunAt DateTime @default(now()) @db.Timestamptz
+  lastRunAt DateTime? @db.Timestamptz
+  summary Json @default("{}")
+  @@unique([environmentId, type])
+  @@map("automation_configs")
+}
+
+model AutomationJob {
+  id String @id @default(uuid()) @db.Uuid
+  environmentId String @db.Uuid
+  key String
+  kind String
+  payload Json
+  status String @default("PENDING")
+  runAt DateTime @default(now()) @db.Timestamptz
+  attempts Int @default(0)
+  leaseToken String? @db.Uuid
+  leaseUntil DateTime? @db.Timestamptz
+  lastError String?
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz
+  @@unique([environmentId, key])
+  @@index([status, runAt])
+  @@map("automation_jobs")
+}
+
+model AutomationState {
+  id String @id @default(uuid()) @db.Uuid
+  environmentId String @db.Uuid
+  key String
+  kind String
+  marketId String? @unique @db.Uuid
+  version Int @default(0)
+  data Json
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz
+  @@unique([environmentId, key])
+  @@index([environmentId, kind])
+  @@map("automation_states")
+}
+
+model WeatherObservation {
+  id String @id @default(uuid()) @db.Uuid
+  environmentId String @db.Uuid
+  station String
+  sourceId String
+  observedAt DateTime @db.Timestamptz
+  fetchedAt DateTime @default(now()) @db.Timestamptz
+  temperatureF Float
+  quality String
+  @@unique([environmentId, station, sourceId])
+  @@index([environmentId, station, observedAt])
+  @@map("weather_observations")
 }
 
 model Position {

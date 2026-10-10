@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from "react";
+import { AutomationAdmin, AutomationDetails } from "./Automation";
 import {
   ArrowUpRight,
   ArrowLeft,
@@ -461,6 +462,7 @@ export default function App() {
                 <div className="rules">
                   <h2>How this market resolves</h2>
                   <p>{selected.resolutionRule.yesCondition}</p>
+                  <AutomationDetails market={selected} />
                   <dl>
                     <dt>Observation window</dt>
                     <dd>
@@ -1080,6 +1082,7 @@ function Admin({
         <p>Worker process must be running for demo activity and settlement.</p>
       </div>
       <section className="admin-section">
+        {env && <AutomationAdmin environmentId={env.id} onError={onError} />}
         <h2>Demo scenario</h2>
         <p>
           {env?.key} · {env?.runState} · Virtual time{" "}

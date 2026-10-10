@@ -8,6 +8,7 @@ import {
   campuses,
   buyInput,
   evidenceSchema,
+  ruleSchema,
 } from "../shared/contracts";
 import { buy, grantWallet, lifecycle, settle, reconcile } from "./engine";
 import { execution } from "./math";
@@ -17,6 +18,8 @@ import { newDemo } from "./demo";
 import { busSnapshot } from "./bus";
 import { createMarket, createMarketInput } from "./markets";
 import { verifyCommitment } from "./chain";
+import { automationStatus, configure, reconcileAutomation } from "./automation";
+import { types, nowFor } from "./automation/core";
 export const app = express();
 app.disable("x-powered-by");
 app.set("json replacer", (_key: string, v: unknown) =>
@@ -340,6 +343,91 @@ app.get("/api/markets/:id/bus", async (req, res) =>
 app.get("/api/admin/health", async (req, res) => {
   await admin(req);
   res.json(await diagnostics());
+});
+app.get("/api/admin/automation", async (req, res) => {
+  await admin(req);
+  const environmentId = envId(req);
+  await scopedIdentity(req, environmentId);
+  res.json(await automationStatus(environmentId));
+});
+app.post("/api/admin/automation", async (req, res) => {
+  await admin(req);
+  const input = z
+    .object({
+      environmentId: z.uuid(),
+      type: z.enum(types),
+      enabled: z.boolean(),
+      settings: z.unknown(),
+    })
+    .parse(req.body);
+  await scopedIdentity(req, input.environmentId);
+  res.json(
+    await configure(
+      input.environmentId,
+      input.type,
+      input.enabled,
+      input.settings,
+    ),
+  );
+});
+app.post("/api/admin/automation/sync", async (req, res) => {
+  await admin(req);
+  const environmentId = id(req.body.environmentId);
+  await scopedIdentity(req, environmentId);
+  const at = await nowFor(environmentId);
+  await db.automationConfig.updateMany({
+    where: { environmentId },
+    data: { nextRunAt: at },
+  });
+  await db.automationJob.updateMany({
+    where: { environmentId, status: { in: ["FAILED", "DONE", "PENDING"] } },
+    data: { status: "PENDING", attempts: 0, runAt: at, lastError: null },
+  });
+  await reconcileAutomation(environmentId);
+  res.json({ scheduled: true });
+});
+app.get("/api/markets/:id/automation", async (req, res) => {
+  const m = await db.market.findUniqueOrThrow({
+    where: { id: id(req.params.id) },
+  });
+  const r = ruleSchema.parse(m.resolutionRule);
+  const visit =
+    r.automation?.type === "bus"
+      ? await db.automationState.findUnique({
+          where: {
+            environmentId_key: {
+              environmentId: m.environmentId,
+              key: `visit:${r.automation.settings.visitId}`,
+            },
+          },
+        })
+      : null;
+  const value = visit?.data as
+    | {
+        state?: string;
+        last?: { sourceAt: string };
+        t0?: string;
+        reason?: string;
+      }
+    | undefined;
+  res.json({
+    provenance: r.automation ?? null,
+    visit: value
+      ? {
+          state: value.state,
+          lastObservedAt: value.last?.sourceAt,
+          t0: value.t0,
+          reason: value.reason,
+          observedDwellSeconds:
+            value.last && value.t0
+              ? Math.max(
+                  0,
+                  (+new Date(value.last.sourceAt) - +new Date(value.t0)) / 1000,
+                )
+              : 0,
+        }
+      : null,
+  });
 });
 app.get("/api/admin/reconcile", async (req, res) => {
   await admin(req);

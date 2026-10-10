@@ -40,10 +40,17 @@ export const ruleSchema = z.object({
   missingPolicy: z.literal("PENDING_THEN_VOID"),
   voidAfter: z.iso.datetime(),
   cancellationPolicy: z.literal("VOID"),
-  tiePolicy: z.literal("NO"),
-  postponementPolicy: z.literal("VOID"),
+  tiePolicy: z.enum(["NO", "VOID"]),
+  postponementPolicy: z.enum(["VOID", "WAIT_48H_THEN_VOID"]),
   threshold: z.number().optional(),
-  comparison: z.enum(["GTE", "LTE", "TRUE"]).default("TRUE"),
+  comparison: z.enum(["GT", "GTE", "LTE", "TRUE"]).default("TRUE"),
+  automation: z
+    .object({
+      type: z.enum(["temperature", "football", "basketball", "bus"]),
+      version: z.number().int().positive(),
+      settings: z.record(z.string(), z.json()),
+    })
+    .optional(),
 });
 export type Rule = z.infer<typeof ruleSchema>;
 export const evidenceSchema = z.object({

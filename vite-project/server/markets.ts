@@ -15,6 +15,8 @@ export const createMarketInput = z.object({
   sourceUrl: z.url(),
   resolutionRule: ruleSchema,
   context: z.record(z.string(), z.unknown()).default({}),
+  generatorKey: z.string().min(1).max(250).optional(),
+  templateVersion: z.number().int().positive().optional(),
   liquidityBMicros: z
     .string()
     .regex(/^\d{7,10}$/)
@@ -25,7 +27,8 @@ export async function createMarket(raw: unknown) {
     rule = input.resolutionRule;
   ensure(
     rule.cutoff === input.closesAt &&
-      new Date(rule.windowStart) > new Date(input.closesAt) &&
+      (rule.automation ||
+        new Date(rule.windowStart) > new Date(input.closesAt)) &&
       new Date(rule.windowEnd) >= new Date(rule.windowStart) &&
       new Date(rule.voidAfter) >= new Date(rule.windowEnd),
     "INVALID_WINDOW",
@@ -33,6 +36,25 @@ export async function createMarket(raw: unknown) {
   ensure(new Date(input.opensAt) < new Date(input.closesAt), "INVALID_WINDOW");
   return transaction(async (tx) => {
     const env = await lockEnvironment(tx, input.environmentId);
+    if (input.generatorKey) {
+      const existing = await tx.market.findUnique({
+        where: {
+          environmentId_generatorKey: {
+            environmentId: env.id,
+            generatorKey: input.generatorKey,
+          },
+        },
+      });
+      if (existing) return { ...existing, creationReplayed: true };
+      ensure(
+        (await clock(tx, env.id)) < new Date(input.closesAt),
+        "AUTOMATION_CUTOFF_PASSED",
+      );
+      ensure(
+        rule.automation && input.templateVersion === rule.automation.version,
+        "INVALID_AUTOMATION_RULE",
+      );
+    }
     ensure(
       env.kind === "DEMO" || !rule.provider.startsWith("demo"),
       "SIMULATED_LIVE_RULE",
@@ -66,7 +88,7 @@ export async function createMarket(raw: unknown) {
       m.id,
       await clock(tx, env.id),
     );
-    return m;
+    return { ...m, creationReplayed: false };
   });
 }
 export async function createLive(key: string) {

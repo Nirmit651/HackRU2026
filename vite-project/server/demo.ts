@@ -199,12 +199,12 @@ export async function demoStep(environmentId: string, seconds = 1) {
       data: { virtualNow: new Date(+e.virtualNow! + seconds * 1000 * e.speed) },
     });
   });
-  if (!env) return;
+  if (!env || env.scenarioVersion !== "campus-v1") return;
   const elapsed = Math.floor(
       (+env.virtualNow! - +env.simulatedStartAt!) / 1000,
     ),
     markets = await db.market.findMany({
-      where: { environmentId },
+      where: { environmentId, generatorKey: null },
       orderBy: { slug: "asc" },
     });
   if (elapsed < 120) {

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { BusSnapshot } from "../shared/contracts";
 import { db, ensure } from "./db";
+import { ruleSchema } from "../shared/contracts";
+import type { Visit } from "./automation/bus-state";
 const coordinate = {
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -38,6 +40,35 @@ export async function busSnapshot(
   const env = await db.environment.findUniqueOrThrow({
     where: { id: market.environmentId },
   });
+  const automation = ruleSchema.parse(market.resolutionRule).automation;
+  if (automation?.type === "bus") {
+    const row = await db.automationState.findUnique({
+      where: {
+        environmentId_key: {
+          environmentId: env.id,
+          key: `visit:${automation.settings.visitId}`,
+        },
+      },
+    });
+    const visit = row?.data as unknown as Visit | undefined;
+    if (!visit?.last || !visit.stop) return null;
+    return {
+      source: market.provider,
+      isSimulated: env.kind === "DEMO",
+      observedAt: visit.last.sourceAt,
+      receivedAt: visit.last.receivedAt,
+      vehicles: [
+        {
+          id: visit.last.vehicleId,
+          routeId: visit.last.routeId ?? "Unknown",
+          latitude: visit.last.latitude,
+          longitude: visit.last.longitude,
+          updatedAt: visit.last.sourceAt,
+        },
+      ],
+      stops: [visit.stop],
+    };
+  }
   if (env.kind === "DEMO") {
     const at = env.virtualNow!.toISOString();
     return {

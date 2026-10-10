@@ -16,6 +16,23 @@ afterAll(async () => {
 it("rejects unauthenticated admin mutations and private wallet reads", async () => {
   expect(
     (
+      await fetch(
+        url +
+          "/api/admin/automation?environmentId=00000000-0000-4000-8000-000000000000",
+      )
+    ).status,
+  ).toBe(401);
+  expect(
+    (
+      await fetch(url + "/api/admin/automation/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      })
+    ).status,
+  ).toBe(401);
+  expect(
+    (
       await fetch(url + "/api/admin/demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

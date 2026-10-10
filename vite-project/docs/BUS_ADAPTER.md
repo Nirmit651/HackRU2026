@@ -1,5 +1,7 @@
 # Bus ingestion boundary
 
+Automated stop-duration markets now consume the teammate's persisted `bus_observations` directly, without another upstream poller. Their map endpoint uses persisted visit evidence. See [automation integration and frozen coverage rules](AUTOMATION.md#bus-integration-and-evidence-limits). The HTTP adapter described below remains available for existing manual bus-arrival markets.
+
 The teammate owns ingestion. Scarlet makes server-side GET requests to `BUS_ADAPTER_URL?marketId=<uuid>` using optional `BUS_ADAPTER_TOKEN`. `server/bus.ts` validates every result; `shared/contracts.ts` contains `BusSnapshot`. There is no dependency on undocumented rubus-client endpoints, and this repo does not replace the teammate's work.
 
 Return `source`, `isSimulated`, `observedAt`, `receivedAt`, `vehicles` (ID, route ID, WGS84 latitude/longitude, timestamp; optional heading), and `stops` (ID, name, WGS84 coordinates). Optional route geometry is `[longitude, latitude][]`; ETA is seconds. Times are ISO UTC. Unknown locations must be omitted. HTTP failure or no configuration shows “Live feed unavailable.” Live environments reject simulated feeds. The map marks observations older than 30 seconds stale. Map state is not settlement evidence.

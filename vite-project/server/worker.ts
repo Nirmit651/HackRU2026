@@ -4,6 +4,7 @@ import { exportBatch, tiger } from "./tiger";
 import { demoStep } from "./demo";
 import { lifecycle, settle } from "./engine";
 import { fetchEvidence } from "./providers";
+import { automationTick } from "./automation";
 let providerNextAt = 0;
 let running = true;
 process.on("SIGINT", () => {
@@ -30,10 +31,15 @@ while (running) {
     });
     for (const m of due) await lifecycle(m.id, "CLOSED");
     await exportBatch();
+    await automationTick();
     if (Date.now() >= providerNextAt) {
       providerNextAt = Date.now() + 30000;
       const awaiting = await db.market.findMany({
-        where: { environment: { kind: "LIVE" }, status: "CLOSED" },
+        where: {
+          environment: { kind: "LIVE" },
+          status: "CLOSED",
+          generatorKey: null,
+        },
         take: 20,
       });
       for (const m of awaiting) {
