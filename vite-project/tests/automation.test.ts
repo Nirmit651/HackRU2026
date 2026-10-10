@@ -1,4 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+const { queryRaw, finish } = vi.hoisted(() => ({
+  queryRaw: vi.fn(),
+  finish: vi.fn(),
+}));
+vi.mock("../server/db", () => ({
+  db: { $queryRaw: queryRaw },
+  transaction: vi.fn(),
+  lockEnvironment: vi.fn(),
+  lockMarket: vi.fn(),
+  ensure: vi.fn(),
+  clock: vi.fn(),
+}));
+vi.mock("../server/automation/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../server/automation/core")>()),
+  finish,
+}));
 import { dayInterval, settingsSchema } from "../server/automation/core";
 import { observedAverage, roundThreshold } from "../server/automation/weather";
 import {
@@ -6,6 +22,7 @@ import {
   emptyVisit,
   type Telemetry,
 } from "../server/automation/bus-state";
+import { evaluateScheduledMarket, monitorScheduledBus } from "../server/automation/bus";
 import { normalizeEspnGame, normalizeGame } from "../server/automation/providers";
 import { sportsResult, seasons } from "../server/automation/sports";
 const s = settingsSchema.parse({
@@ -125,6 +142,68 @@ describe("continuous observed bus visits", () => {
     v = advanceVisit(v, sample(110, 0.0003), s, new Date(base + 110000));
     v = advanceVisit(v, sample(120), s, new Date(base + 120000));
     expect(v.state).toBe("UNCERTAIN");
+  });
+});
+describe("scheduled bus markets", () => {
+  const opensAt = "2026-10-10T16:00:00.000Z";
+  const deadline = "2026-10-10T16:02:00.000Z";
+  const scheduled = { kind: "arrival_by_deadline" as const, routeId: "LX", stop: { latitude: 40.5, longitude: -74.4 }, opensAt, deadline };
+  const settings = { enterMeters: 50, maxGapSeconds: 60, latenessSeconds: 10 };
+  beforeEach(() => {
+    finish.mockClear();
+    queryRaw.mockReset();
+  });
+  it("validates scheduled IDs, timing, and verified stop references", () => {
+    expect(() => settingsSchema.parse({
+      stops: [],
+      scheduledMarkets: [{ id: "lx", kind: "arrival_by_deadline", vehicleId: "123", routeId: "LX", stopId: "missing", opensAt, closesAt: "2026-10-10T16:01:00.000Z", deadline, voidAfter: "2026-10-10T16:03:00.000Z" }],
+    })).toThrow();
+  });
+  it("settles arrival YES only when the frozen vehicle enters before deadline", () => {
+    const result = evaluateScheduledMarket(scheduled, [sample(30)], settings);
+    expect(result).toMatchObject({ result: true });
+  });
+  it("settles arrival NO only with continuous source-time coverage", () => {
+    const outside = (sec: number) => sample(sec, 0.001);
+    const result = evaluateScheduledMarket(scheduled, [outside(0), outside(60), outside(120)], settings);
+    expect(result).toMatchObject({ result: false });
+    expect(evaluateScheduledMarket(scheduled, [outside(0), outside(120)], settings)).toBeNull();
+  });
+  it("keeps gaps, stale rows, route changes, and conflicts from proving NO", () => {
+    const outside = (sec: number) => sample(sec, 0.001);
+    expect(evaluateScheduledMarket(scheduled, [{ ...outside(0), receivedAt: sample(20).sourceAt }], settings)).toMatchObject({ void: "STALE_SOURCE_OBSERVATION" });
+    expect(evaluateScheduledMarket(scheduled, [{ ...outside(0), routeId: "A" }], settings)).toMatchObject({ void: "ROUTE_IDENTITY_CHANGED" });
+    expect(evaluateScheduledMarket(scheduled, [outside(0), { ...outside(0), latitude: 40.6 }], settings)).toMatchObject({ void: "CONFLICTING_SOURCE_OBSERVATION" });
+  });
+  it("uses the first qualifying post-target observation for presence", () => {
+    const targetTime = deadline;
+    const market = { ...scheduled, kind: "presence_at_time" as const, targetTime };
+    const inside = sample(120), outside = sample(125, 0.001);
+    expect(evaluateScheduledMarket(market, [inside, outside], settings)).toMatchObject({ result: true });
+    expect(evaluateScheduledMarket(market, [outside], settings)).toMatchObject({ result: false });
+    expect(evaluateScheduledMarket(market, [sample(151)], settings)).toBeNull();
+  });
+  const monitorSettings = (kind: "arrival_by_deadline" | "presence_at_time") => ({
+    kind, sourceSystem: "fixture", vehicleId: "bus", routeId: "LX", stop: { latitude: 40.5, longitude: -74.4 },
+    opensAt, deadline, targetTime: deadline, voidAfter: "2026-10-10T16:03:00.000Z",
+    enterMeters: 50, maxGapSeconds: 60, latenessSeconds: 10, algorithm: "fixture-v1",
+  });
+  const market = { environmentId: "env" } as never;
+  it("keeps invalid arrival evidence pending until voidAfter, then voids", async () => {
+    queryRaw.mockResolvedValue([{ source_system: "fixture", vehicle_id: "bus", source_measured_at: new Date(opensAt), retrieved_at: new Date(opensAt), latitude: 40.5, longitude: -74.4, route_id: "A", source_observation_id: null }]);
+    const settings = monitorSettings("arrival_by_deadline");
+    await expect(monitorScheduledBus(market, settings, new Date("2026-10-10T16:02:30.000Z"))).resolves.toEqual(new Date("2026-10-10T16:02:40.000Z"));
+    expect(finish).not.toHaveBeenCalled();
+    await monitorScheduledBus(market, settings, new Date(settings.voidAfter));
+    expect(finish).toHaveBeenCalledTimes(1);
+  });
+  it("keeps missing presence evidence pending after its window until voidAfter, then voids", async () => {
+    queryRaw.mockResolvedValue([]);
+    const settings = monitorSettings("presence_at_time");
+    await expect(monitorScheduledBus(market, settings, new Date("2026-10-10T16:02:31.000Z"))).resolves.toEqual(new Date("2026-10-10T16:02:41.000Z"));
+    expect(finish).not.toHaveBeenCalled();
+    await monitorScheduledBus(market, settings, new Date(settings.voidAfter));
+    expect(finish).toHaveBeenCalledTimes(1);
   });
 });
 describe("documented sports schemas", () => {
