@@ -2057,4 +2057,7 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .trade-ticket .quantity-presets { display: none; }
 .trade-ticket-heading { justify-content: flex-start; gap: 24px; }
 .trade-ticket-heading h2 { color: var(--scarlet); }
+.trade-action-tabs { display: flex; gap: 20px; align-items: center; }
+.trade-action-tabs button { padding: 0 0 8px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #77747b; font: inherit; font-size: 23px; font-weight: 760; letter-spacing: -.04em; cursor: pointer; }
+.trade-action-tabs button.selected { color: var(--scarlet); border-bottom-color: var(--scarlet); }
 .trade-ticket-heading span { margin-left: 0; color: #77747b; }

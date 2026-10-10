@@ -52,6 +52,17 @@ export function execution(
     noShares: nextN,
   };
 }
+export function saleExecution(
+  y: bigint, n: bigint, bMicros: bigint, side: "YES" | "NO", quantity: number,
+) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000 || y < 0n || n < 0n || y + n > 1_000_000_000n || bMicros < 1_000_000n)
+    throw new Error("Pricing bounds exceeded");
+  const k = BigInt(quantity), nextY = y - (side === "YES" ? k : 0n), nextN = n - (side === "NO" ? k : 0n);
+  if (nextY < 0n || nextN < 0n) throw new Error("Insufficient shares");
+  const b = D(bMicros).div(1e6),
+    proceedsMicros = BigInt(Decimal.max(0, cost(y, n, b).minus(cost(nextY, nextN, b)).mul(1e6).floor()).toFixed(0));
+  return { proceedsMicros, yesPriceBefore: price(y, n, bMicros).toFixed(20), yesPriceAfter: price(nextY, nextN, bMicros).toFixed(20), yesShares: nextY, noShares: nextN };
+}
 export function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;

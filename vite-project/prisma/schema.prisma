@@ -64,8 +64,14 @@ enum TransferKind {
   STARTING_GRANT
   MARKET_FUNDING
   TRADE
+  SALE
   PAYOUT
   VOID_REFUND
+}
+
+enum TradeAction {
+  BUY
+  SELL
 }
 
 enum MarketEventKind {
@@ -269,6 +275,7 @@ model Trade {
   marketId          String        @db.Uuid
   walletId          String        @db.Uuid
   side              ContractSide
+  action            TradeAction       @default(BUY)
   quantity          BigInt
   costMicros        BigInt
   yesPriceBefore    Decimal       @db.Decimal(30, 20)

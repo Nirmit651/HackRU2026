@@ -7,9 +7,11 @@ import {
 } from "../generated/prisma/client";
 import {
   buyInput,
+  sellInput,
   ruleSchema,
   evidenceSchema,
   type BuyInput,
+  type SellInput,
   type ProviderEvidence,
 } from "../shared/contracts";
 import {
@@ -22,7 +24,7 @@ import {
   ensure,
   type Tx,
 } from "./db";
-import { execution, hash, UNIT } from "./math";
+import { execution, saleExecution, hash, UNIT } from "./math";
 export type Actor = {
   profileId: string;
   role: "HUMAN" | "RUNNER";
@@ -312,6 +314,51 @@ export async function buy(actor: Actor, raw: BuyInput) {
       market: updated,
       replayed: false,
     };
+  });
+}
+export async function sell(actor: Actor, raw: SellInput) {
+  const input = sellInput.parse(raw),
+    requestHash = hash({ action: "SELL", marketId: input.marketId, environmentId: input.environmentId, side: input.side, quantity: input.quantity, minProceedsMicros: input.minProceedsMicros });
+  return transaction(async (tx) => {
+    await authorizeActor(tx, actor, input.environmentId);
+    const wallet = await tx.wallet.findUnique({ where: { environmentId_profileId: { environmentId: input.environmentId, profileId: actor.profileId } } });
+    ensure(wallet, "WALLET_REQUIRED", 409);
+    const lookup = () => tx.trade.findUnique({ where: { walletId_idempotencyKey: { walletId: wallet.id, idempotencyKey: input.idempotencyKey } } });
+    const replay = async (trade: NonNullable<Awaited<ReturnType<typeof lookup>>>) => {
+      ensure(trade.requestHash === requestHash, "IDEMPOTENCY_CONFLICT", 409);
+      return { trade, wallet: await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id } }), market: await tx.market.findUniqueOrThrow({ where: { id: trade.marketId } }), replayed: true };
+    };
+    const prior = await lookup();
+    if (prior) return replay(prior);
+    const env = await tx.environment.findUniqueOrThrow({ where: { id: input.environmentId } });
+    if (env.kind === "DEMO") await lockEnvironment(tx, env.id);
+    const market = await lockMarket(tx, input.marketId);
+    ensure(market.environmentId === input.environmentId, "ENVIRONMENT_MISMATCH", 403);
+    await lockWallets(tx, [wallet.id, market.marketMakerWalletId]);
+    const again = await lookup();
+    if (again) return replay(again);
+    const at = await clock(tx, input.environmentId);
+    ensure(market.status === "OPEN" && at >= market.opensAt && at < market.closesAt, "MARKET_CLOSED", 409);
+    const position = await tx.position.findUnique({ where: { marketId_walletId: { marketId: market.id, walletId: wallet.id } } });
+    const held = input.side === "YES" ? position?.yesShares ?? 0n : position?.noShares ?? 0n;
+    ensure(held >= BigInt(input.quantity), "INSUFFICIENT_SHARES", 409);
+    const quote = saleExecution(market.yesShares, market.noShares, market.liquidityBMicros, input.side, input.quantity);
+    ensure(quote.proceedsMicros > 0n && quote.proceedsMicros >= BigInt(input.minProceedsMicros), "SLIPPAGE_EXCEEDED", 409);
+    const id = randomUUID();
+    const payment = await transfer(tx, input.environmentId, market.marketMakerWalletId, wallet.id, quote.proceedsMicros, "SALE", `sale:${wallet.id}:${input.idempotencyKey}`, id, at);
+    const updated = await tx.market.update({ where: { id: market.id }, data: { yesShares: quote.yesShares, noShares: quote.noShares, yesPrice: quote.yesPriceAfter, volumeMicros: { increment: quote.proceedsMicros }, version: { increment: 1 } } });
+    const delta = { yesShares: input.side === "YES" ? BigInt(input.quantity) : 0n, noShares: input.side === "NO" ? BigInt(input.quantity) : 0n },
+      basisToRemove = held === BigInt(input.quantity)
+        ? position!.totalCostMicros
+        : position!.totalCostMicros * BigInt(input.quantity) / held;
+    await tx.position.update({ where: { marketId_walletId: { marketId: market.id, walletId: wallet.id } }, data: { yesShares: { decrement: delta.yesShares }, noShares: { decrement: delta.noShares }, totalCostMicros: { decrement: basisToRemove } } });
+    const trade = await tx.trade.create({ data: { id, environmentId: input.environmentId, marketId: market.id, walletId: wallet.id, side: input.side, action: "SELL", quantity: BigInt(input.quantity), costMicros: quote.proceedsMicros, yesPriceBefore: quote.yesPriceBefore, yesPriceAfter: quote.yesPriceAfter, marketVersion: updated.version, idempotencyKey: input.idempotencyKey, requestHash, paymentTransferId: payment.id, createdAt: at } });
+    await appendEvent(tx, updated, "PRICE_CHANGED", at, { action: "SELL", side: input.side, quantity: input.quantity, isSimulated: env.kind === "DEMO" }, quote.proceedsMicros, id);
+    if (env.kind === "DEMO") {
+      const last = await tx.demoAction.aggregate({ where: { environmentId: env.id }, _max: { sequence: true } });
+      await tx.demoAction.create({ data: { environmentId: env.id, sequence: (last._max.sequence ?? 0n) + 1n, virtualAt: at, actorProfileId: actor.profileId, actionType: "SELL", input: { ...input }, resultReference: id } });
+    }
+    return { trade, wallet: await tx.wallet.findUniqueOrThrow({ where: { id: wallet.id } }), market: updated, replayed: false };
   });
 }
 export async function lifecycle(

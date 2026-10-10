@@ -5,6 +5,7 @@ import {
   grantWallet,
   lifecycle,
   buy,
+  sell,
   settle,
   reconcile,
 } from "./engine";
@@ -314,14 +315,10 @@ export async function replay(environmentId: string) {
       old = oldMarkets.find((m) => m.id === input.marketId)!,
       m = newMarkets.find((m) => m.slug === old.slug)!;
     const p = await db.profile.findUniqueOrThrow({ where: { id } });
-    await buy(
-      {
-        profileId: id,
-        role: p.kind === "BOT" ? "RUNNER" : "HUMAN",
-        environmentId: target.id,
-      },
-      { ...input, environmentId: target.id, marketId: m.id },
-    );
+    const actor = { profileId: id, role: p.kind === "BOT" ? "RUNNER" as const : "HUMAN" as const, environmentId: target.id };
+    if (action.actionType === "SELL")
+      await sell(actor, { ...input, environmentId: target.id, marketId: m.id, minProceedsMicros: (input as unknown as { minProceedsMicros: string }).minProceedsMicros });
+    else await buy(actor, { ...input, environmentId: target.id, marketId: m.id });
   }
   await setDemoTime(target.id, source.virtualNow!);
   for (const old of oldMarkets) {

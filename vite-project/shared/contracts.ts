@@ -26,6 +26,14 @@ export const buyInput = z
   })
   .strict();
 export type BuyInput = z.infer<typeof buyInput>;
+export const sellInput = z
+  .object({
+    environmentId: z.uuid(), marketId: z.uuid(), side: z.enum(["YES", "NO"]),
+    quantity: z.number().int().min(1).max(1000), minProceedsMicros: money,
+    idempotencyKey: z.string().min(8).max(100),
+  })
+  .strict();
+export type SellInput = z.infer<typeof sellInput>;
 export const ruleSchema = z.object({
   canonicalizationVersion: z.literal("rutgers-v1"),
   yesCondition: z.string().min(10).max(1000),

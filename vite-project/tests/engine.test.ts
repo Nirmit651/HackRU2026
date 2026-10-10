@@ -12,6 +12,7 @@ import {
 } from "../server/demo";
 import {
   buy,
+  sell,
   grantWallet,
   settle,
   reconcile,
@@ -102,6 +103,24 @@ describe("PostgreSQL financial invariants", () => {
     expect(await db.marketEvent.count({ where: { marketId: market.id } })).toBe(
       events,
     );
+  });
+  it("sells held shares, credits cash, and moves the price back down", async () => {
+    const position = await db.position.findUniqueOrThrow({
+        where: { marketId_walletId: { marketId: market.id, walletId: (await grantWallet(profile.id, env.id)).id } },
+      }),
+      before = await db.market.findUniqueOrThrow({ where: { id: market.id } }),
+      quantity = Number(position.yesShares > 10n ? 10n : position.yesShares);
+    expect(quantity).toBeGreaterThan(0);
+    const result = await sell(actor(), {
+      environmentId: env.id, marketId: market.id, side: "YES", quantity,
+      minProceedsMicros: "1", idempotencyKey: randomUUID(),
+    });
+    expect(result.trade.action).toBe("SELL");
+    expect(result.wallet.balanceMicros).toBeGreaterThan(0n);
+    expect(result.market.yesShares).toBe(before.yesShares - BigInt(quantity));
+    expect(result.market.yesPrice.lessThan(before.yesPrice)).toBe(true);
+    expect(await db.transfer.count({ where: { referenceId: result.trade.id, kind: "SALE" } })).toBe(1);
+    expect((await reconcile(env.id)).ok).toBe(true);
   });
   it("uses cutoff clock and retrieves committed retries after closing", async () => {
     const bot = await db.profile.findFirstOrThrow({

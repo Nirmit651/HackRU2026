@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { execution, price, hash } from "../server/math";
+import { execution, saleExecution, price, hash } from "../server/math";
 describe("LMSR", () => {
   it("has symmetric complementary prices and known costs", () => {
     expect(price(0n, 0n, 100000000n).toString()).toBe("0.5");
@@ -30,6 +30,15 @@ describe("LMSR", () => {
       reserve += q.costMicros;
       expect(reserve >= (y > n ? y : n) * 1000000n).toBe(true);
     }
+  });
+  it("reverses the price and returns the curve value when shares are sold", () => {
+    const bought = execution(0n, 0n, 100000000n, "YES", 100);
+    const sold = saleExecution(bought.yesShares, bought.noShares, 100000000n, "YES", 100);
+    expect(sold.yesShares).toBe(0n);
+    expect(sold.noShares).toBe(0n);
+    expect(sold.yesPriceAfter).toBe("0.50000000000000000000");
+    expect(sold.proceedsMicros).toBeGreaterThan(0n);
+    expect(sold.proceedsMicros).toBeLessThanOrEqual(bought.costMicros);
   });
   it("canonicalizes key order and detects changes", () => {
     expect(hash({ a: 1, b: 2 })).toBe(hash({ b: 2, a: 1 }));

@@ -7,11 +7,12 @@ import {
   categories,
   campuses,
   buyInput,
+  sellInput,
   evidenceSchema,
   ruleSchema,
 } from "../shared/contracts";
-import { buy, grantWallet, lifecycle, settle, reconcile } from "./engine";
-import { execution } from "./math";
+import { buy, sell, grantWallet, lifecycle, settle, reconcile } from "./engine";
+import { execution, saleExecution } from "./math";
 import { identity, scopedIdentity, admin, demoToken, localDemo } from "./auth";
 import { history, diagnostics } from "./tiger";
 import { newDemo } from "./demo";
@@ -202,6 +203,7 @@ app.post("/api/markets/:id/quote", async (req, res) => {
       .object({
         environmentId: z.uuid(),
         side: z.enum(["YES", "NO"]),
+        action: z.enum(["BUY", "SELL"]).default("BUY"),
         quantity: z.number().int().min(1).max(1000),
       })
       .parse(req.body),
@@ -216,24 +218,20 @@ app.post("/api/markets/:id/quote", async (req, res) => {
     "MARKET_CLOSED",
     409,
   );
-  const q = execution(
-    m.yesShares,
-    m.noShares,
-    m.liquidityBMicros,
-    input.side,
-    input.quantity,
-  );
-  res.json({
-    ...q,
-    version: m.version,
-    winningPayoutMicros: BigInt(input.quantity) * 1000000n,
-    netProfitMicros: BigInt(input.quantity) * 1000000n - q.costMicros,
-  });
+  if (input.action === "BUY") {
+    const q = execution(m.yesShares, m.noShares, m.liquidityBMicros, input.side, input.quantity);
+    res.json({ ...q, version: m.version, winningPayoutMicros: BigInt(input.quantity) * 1000000n, netProfitMicros: BigInt(input.quantity) * 1000000n - q.costMicros });
+  } else {
+    const q = saleExecution(m.yesShares, m.noShares, m.liquidityBMicros, input.side, input.quantity);
+    res.json({ ...q, version: m.version });
+  }
 });
 app.post("/api/markets/:id/trades", async (req, res) => {
-  const input = buyInput.parse({ ...req.body, marketId: id(req.params.id) }),
-    user = await scopedIdentity(req, input.environmentId);
-  res.json(await buy({ profileId: user.profile.id, role: "HUMAN" }, input));
+  const { action, ...order } = { ...req.body, marketId: id(req.params.id) },
+    user = await scopedIdentity(req, order.environmentId);
+  res.json(action === "SELL"
+    ? await sell({ profileId: user.profile.id, role: "HUMAN" }, sellInput.parse(order))
+    : await buy({ profileId: user.profile.id, role: "HUMAN" }, buyInput.parse(order)));
 });
 app.post("/api/runner/trades", async (req, res) => {
   const token = req.headers.authorization?.replace(/^Bearer /, ""),

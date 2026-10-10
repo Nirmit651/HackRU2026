@@ -282,7 +282,7 @@ export default function App() {
             ? "DEMO RUN · SIMULATED OUTCOMES"
             : "CAMPUS MARKETS · PLAY MONEY"}
           <span className="bar-divider" />
-          Buy and hold. No real money.
+          Trade while markets are open. No real money.
         </div>
         <select
           aria-label="Environment"
@@ -471,7 +471,7 @@ export default function App() {
               <h1>{selected.title}</h1>
               <p>
                 <Clock3 size={15} /> Closes {date(selected.closesAt)}
-                <span>•</span> Buy and hold
+                <span>•</span> Trade while market is open
                 <a href="#resolution"><FileText size={14} /> Rules & resolution</a>
               </p>
               <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
@@ -570,7 +570,7 @@ export default function App() {
                   onTrade={() => {
                     refreshAccount();
                     setNotice(
-                      "Purchase confirmed. Your holdings and cash have updated.",
+                      "Trade confirmed. Your holdings, cash, and price have updated.",
                     );
                   }}
                 />
@@ -668,16 +668,19 @@ function TradeTicket({
   onTrade: () => void;
 }) {
   const [side, setSide] = useState<"YES" | "NO">(initialSide),
+    [action, setAction] = useState<"BUY" | "SELL">("BUY"),
     [quantityText, setQuantityText] = useState(""),
     [quote, setQuote] = useState<{
-      costMicros: string;
-      winningPayoutMicros: string;
-      netProfitMicros: string;
+      costMicros?: string;
+      proceedsMicros?: string;
+      winningPayoutMicros?: string;
+      netProfitMicros?: string;
     } | null>(null),
     [quoteFor, setQuoteFor] = useState<{
       marketId: string;
       version: string;
       side: "YES" | "NO";
+      action: "BUY" | "SELL";
       quantity: number;
     } | null>(null),
     [busy, setBusy] = useState(false),
@@ -687,6 +690,7 @@ function TradeTicket({
       key: string;
       max: string;
       side: string;
+      action: "BUY" | "SELL";
       quantity: number;
       marketId: string;
     } | null>(null),
@@ -709,12 +713,13 @@ function TradeTicket({
       request<typeof quote>(`/markets/${market.id}/quote`, {
         environmentId: market.environmentId,
         side,
+        action,
         quantity,
       })
         .then((q) => {
           if (active) {
             setQuote(q);
-            setQuoteFor({ marketId: market.id, version: market.version, side, quantity });
+            setQuoteFor({ marketId: market.id, version: market.version, side, action, quantity });
             setQuoteError("");
           }
         })
@@ -724,15 +729,18 @@ function TradeTicket({
     return () => {
       active = false;
     };
-  }, [market.id, market.version, side, quantity, closed]);
+  }, [market.id, market.version, side, action, quantity, closed]);
   const max = quote
-    ? ((BigInt(quote.costMicros) * 102n + 99n) / 100n).toString()
+    ? action === "BUY"
+      ? ((BigInt(quote.costMicros ?? "0") * 102n + 99n) / 100n).toString()
+      : (BigInt(quote.proceedsMicros ?? "0") * 98n / 100n).toString()
     : "0";
   const quoteIsCurrent =
     !!quote &&
     quoteFor?.marketId === market.id &&
     quoteFor.version === market.version &&
     quoteFor.side === side &&
+    quoteFor.action === action &&
     quoteFor.quantity === quantity;
   async function submit() {
     if (!signedIn) {
@@ -745,6 +753,7 @@ function TradeTicket({
     const attempt =
       pending &&
       pending.side === side &&
+      pending.action === action &&
       pending.quantity === quantity &&
       pending.marketId === market.id
         ? pending
@@ -752,6 +761,7 @@ function TradeTicket({
             key: crypto.randomUUID(),
             max,
             side,
+            action,
             quantity,
             marketId: market.id,
           };
@@ -761,7 +771,8 @@ function TradeTicket({
         environmentId: market.environmentId,
         side,
         quantity,
-        maxCostMicros: attempt.max,
+        action,
+        ...(action === "BUY" ? { maxCostMicros: attempt.max } : { minProceedsMicros: attempt.max }),
         idempotencyKey: attempt.key,
       });
       setPending(null);
@@ -775,8 +786,13 @@ function TradeTicket({
   return (
     <section className="trade-ticket">
       <div className="trade-ticket-heading">
-        <h2>Buy</h2>
-        <span>Sell</span>
+        <div className="trade-action-tabs" role="tablist" aria-label="Order action">
+          {(["BUY", "SELL"] as const).map((value) => (
+            <button key={value} role="tab" aria-selected={action === value} className={action === value ? "selected" : ""} onClick={() => { setAction(value); setPending(null); setTradeError(""); }}>
+              {value === "BUY" ? "Buy" : "Sell"}
+            </button>
+          ))}
+        </div>
         <strong>Shares⌄</strong>
       </div>
       <div className="side-picker" aria-label="Select contract outcome">
@@ -825,28 +841,28 @@ function TradeTicket({
         <span>Market-implied probability</span>
       </div>
       <div className="profit-callout" aria-live="polite">
-        <span>Estimated profit if correct</span>
-        <strong>{quote ? dollars(quote.netProfitMicros) : "—"}</strong>
-        <small>Potential payout {quote ? dollars(quote.winningPayoutMicros) : "—"}</small>
+        <span>{action === "BUY" ? "Estimated profit if correct" : "Estimated sale proceeds"}</span>
+        <strong>{quote ? dollars(action === "BUY" ? quote.netProfitMicros ?? "0" : quote.proceedsMicros ?? "0") : "—"}</strong>
+        <small>{action === "BUY" ? `Potential payout ${quote ? dollars(quote.winningPayoutMicros ?? "0") : "—"}` : "Price updates with every completed sale."}</small>
       </div>
       <dl className="trade-summary">
-        <dt>Cost</dt>
-        <dd>{quote && quantity > 0 ? dollars(quote.costMicros, 6) : "—"}</dd>
+        <dt>{action === "BUY" ? "Cost" : "You receive"}</dt>
+        <dd>{quote && quantity > 0 ? dollars(action === "BUY" ? quote.costMicros ?? "0" : quote.proceedsMicros ?? "0", 6) : "—"}</dd>
         <dt className="hidden-summary">Average / share</dt>
         <dd className="hidden-summary">
           {quote && quantity > 0
-            ? dollars(BigInt(quote.costMicros) / BigInt(quantity))
+            ? dollars(BigInt(quote.costMicros ?? "0") / BigInt(quantity))
             : "—"}
         </dd>
         <dt className="hidden-summary">
           Maximum cost <small>(2% buffer)</small>
         </dt>
         <dd>{quote ? dollars(max, 6) : "—"}</dd>
-        <dt>Max payout</dt>
-        <dd>{quote && quantity > 0 ? dollars(quote.winningPayoutMicros) : "$R 0.00"}</dd>
+        <dt>{action === "BUY" ? "Max payout" : "Minimum receive"}</dt>
+        <dd>{quote && quantity > 0 ? action === "BUY" ? dollars(quote.winningPayoutMicros ?? "0") : dollars(max, 6) : "$R 0.00"}</dd>
         <dt>Return multiple</dt>
         <dd className="return-multiple">
-          {quote && quantity > 0
+          {action === "BUY" && quote && quantity > 0
             ? `${(Number(quote.winningPayoutMicros) / Number(quote.costMicros)).toFixed(2)}×`
             : "—"}
         </dd>
@@ -862,9 +878,9 @@ function TradeTicket({
             ? "Trading closed"
             : signedIn
               ? quantity > 0
-                ? `Buy ${quantity} ${side} shares`
+                ? `${action === "BUY" ? "Buy" : "Sell"} ${quantity} ${side} shares`
                 : "Enter number of shares"
-              : "Sign in to buy"}
+              : `Sign in to ${action === "BUY" ? "buy" : "sell"}`}
         <ArrowRight size={16} />
       </button>
       {(quoteError || tradeError) && !closed && (
@@ -873,8 +889,7 @@ function TradeTicket({
         </p>
       )}
       <p className="trade-fineprint">
-        Your full order moves the price. Shares are held until settlement; they
-        cannot be sold.
+        Your full order moves the price. You can sell shares while this market is open.
       </p>
     </section>
   );
@@ -898,6 +913,7 @@ function Portfolio({
     [trades, setTrades] = useState<
       {
         id: string;
+        action?: string;
         side: string;
         quantity: string;
         costMicros: string;
@@ -932,7 +948,7 @@ function Portfolio({
             <span>Spendable cash</span>
             <strong>{dollars(balance)}</strong>
             <p>
-              Purchases reduce cash until settlement. Holdings cannot be sold.
+              Buys reduce cash; sales return the current market value while a market is open.
             </p>
           </div>
           <h2 className="section-title">Your positions</h2>
@@ -962,11 +978,11 @@ function Portfolio({
               Your first prediction starts in Markets.
             </div>
           )}
-          <h2 className="section-title">Recent purchases</h2>
+          <h2 className="section-title">Recent trades</h2>
           {trades.map((t) => (
             <div className="history-row" key={t.id}>
               <span>
-                {t.quantity} {t.side}
+                {t.action ?? "BUY"} {t.quantity} {t.side}
               </span>
               <span>{date(t.createdAt)}</span>
               <span>{dollars(t.costMicros)}</span>
