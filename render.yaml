@@ -47,3 +47,14 @@ services:
         value: "false"
       - key: NODE_ENV
         value: production
+
+  - type: worker
+    name: rutgers-bus-collector
+    runtime: python
+    rootDir: backend/data-collection
+    numInstances: 1
+    buildCommand: pip install .
+    startCommand: python -m rutgers_bus_collector.cli --watch --interval 15
+    envVars:
+      - key: SUPABASE_DB_URL
+        sync: false
