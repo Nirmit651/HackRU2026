@@ -1,0 +1,400 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Campus {
+  BUSCH
+  LIVINGSTON
+  COLLEGE_AVE
+  COOK_DOUGLASS
+  OTHER
+}
+
+enum ProfileKind {
+  HUMAN
+  BOT
+}
+
+enum EnvironmentKind {
+  LIVE
+  DEMO
+}
+
+enum WalletKind {
+  USER
+  TREASURY
+  MARKET_MAKER
+}
+
+enum MarketStatus {
+  DRAFT
+  OPEN
+  PAUSED
+  CLOSED
+  RESOLVED
+  VOIDED
+}
+
+enum Category {
+  TEMPERATURE
+  BUS_ARRIVAL
+  RAINFALL
+  CONCERT
+  STUDENT_ELECTION
+  VARSITY_SPORTS
+}
+
+enum ContractSide {
+  YES
+  NO
+}
+
+enum SettlementOutcome {
+  YES
+  NO
+  VOID
+}
+
+enum TransferKind {
+  STARTING_GRANT
+  MARKET_FUNDING
+  TRADE
+  PAYOUT
+  VOID_REFUND
+}
+
+enum MarketEventKind {
+  OPENED
+  PRICE_CHANGED
+  STATUS_CHANGED
+  SETTLED
+}
+
+model Profile {
+  id          String      @id @default(uuid()) @db.Uuid
+  authUserId  String?     @unique @db.Uuid
+  handle      String      @unique
+  displayName String
+  campus      Campus      @default(OTHER)
+  kind        ProfileKind
+  createdAt   DateTime    @default(now()) @db.Timestamptz
+  wallets     Wallet[]
+
+  submittedEvidence   Evidence[]
+  resolvedSettlements Settlement[]
+  actions             DemoAction[]
+
+  @@map("profiles")
+}
+
+model Environment {
+  id                  String          @id @default(uuid()) @db.Uuid
+  key                 String          @unique
+  kind                EnvironmentKind
+  initialSupplyMicros BigInt
+  startingGrantMicros BigInt          @default(1000000000)
+  seed                Int?
+  scenarioVersion     String?
+  simulatedStartAt    DateTime?       @db.Timestamptz
+  virtualNow          DateTime?       @db.Timestamptz
+  runState            String          @default("PAUSED")
+  speed               Int             @default(1)
+  createdAt           DateTime        @default(now()) @db.Timestamptz
+  wallets             Wallet[]
+  markets             Market[]
+
+  actions DemoAction[]
+
+  @@map("environments")
+}
+
+model Wallet {
+  id                   String      @id @default(uuid()) @db.Uuid
+  environmentId        String      @db.Uuid
+  profileId            String?     @db.Uuid
+  kind                 WalletKind
+  balanceMicros        BigInt      @default(0)
+  openingBalanceMicros BigInt      @default(0)
+  createdAt            DateTime    @default(now()) @db.Timestamptz
+  updatedAt            DateTime    @updatedAt @db.Timestamptz
+  environment          Environment @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  profile              Profile?    @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  makerFor             Market?
+  positions            Position[]
+  trades               Trade[]
+  outgoing             Transfer[]  @relation("outgoing")
+  incoming             Transfer[]  @relation("incoming")
+
+  @@unique([environmentId, profileId])
+  @@unique([id, environmentId])
+  @@index([profileId])
+  @@map("wallets")
+}
+
+model Market {
+  id                   String            @id @default(uuid()) @db.Uuid
+  environmentId        String            @db.Uuid
+  slug                 String
+  title                String
+  description          String
+  category             Category
+  status               MarketStatus      @default(DRAFT)
+  opensAt              DateTime          @db.Timestamptz
+  closesAt             DateTime          @db.Timestamptz
+  expectedResolutionAt DateTime          @db.Timestamptz
+  displayTimezone      String            @default("America/New_York")
+  ruleVersion          Int               @default(1)
+  resolutionRule       Json
+  ruleHash             String
+  provider             String
+  sourceUrl            String
+  externalEventId      String?
+  context              Json
+  marketMakerWalletId  String            @unique @db.Uuid
+  liquidityBMicros     BigInt            @default(100000000)
+  yesShares            BigInt            @default(0)
+  noShares             BigInt            @default(0)
+  yesPrice             Decimal           @default(0.5) @db.Decimal(30, 20)
+  volumeMicros         BigInt            @default(0)
+  version              BigInt            @default(0)
+  createdAt            DateTime          @default(now()) @db.Timestamptz
+  updatedAt            DateTime          @updatedAt @db.Timestamptz
+  environment          Environment       @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  maker                Wallet            @relation(fields: [marketMakerWalletId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  positions            Position[]
+  trades               Trade[]
+  events               MarketEvent[]
+  evidence             Evidence[]
+  settlement           Settlement?
+  commitments          ChainCommitment[]
+
+  @@unique([environmentId, slug])
+  @@unique([marketMakerWalletId, environmentId])
+  @@unique([id, environmentId])
+  @@index([environmentId, status, category, closesAt])
+  @@map("markets")
+}
+
+model Position {
+  id              String   @id @default(uuid()) @db.Uuid
+  environmentId   String   @db.Uuid
+  marketId        String   @db.Uuid
+  walletId        String   @db.Uuid
+  yesShares       BigInt   @default(0)
+  noShares        BigInt   @default(0)
+  totalCostMicros BigInt   @default(0)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+  market          Market   @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  wallet          Wallet   @relation(fields: [walletId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  payout          Payout?
+
+  @@unique([marketId, walletId])
+  @@unique([id, environmentId, marketId, walletId])
+  @@index([walletId, environmentId])
+  @@map("positions")
+}
+
+model Trade {
+  id                String        @id @default(uuid()) @db.Uuid
+  environmentId     String        @db.Uuid
+  marketId          String        @db.Uuid
+  walletId          String        @db.Uuid
+  side              ContractSide
+  quantity          BigInt
+  costMicros        BigInt
+  yesPriceBefore    Decimal       @db.Decimal(30, 20)
+  yesPriceAfter     Decimal       @db.Decimal(30, 20)
+  marketVersion     BigInt
+  idempotencyKey    String
+  requestHash       String
+  paymentTransferId String        @unique @db.Uuid
+  createdAt         DateTime      @default(now()) @db.Timestamptz
+  market            Market        @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  wallet            Wallet        @relation(fields: [walletId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  payment           Transfer      @relation(fields: [paymentTransferId], references: [id], onDelete: Restrict)
+  events            MarketEvent[]
+
+  @@unique([walletId, idempotencyKey])
+  @@index([walletId, createdAt])
+  @@index([marketId, marketVersion])
+  @@map("trades")
+}
+
+model Transfer {
+  id            String       @id @default(uuid()) @db.Uuid
+  environmentId String       @db.Uuid
+  fromWalletId  String       @db.Uuid
+  toWalletId    String       @db.Uuid
+  amountMicros  BigInt
+  kind          TransferKind
+  dedupeKey     String       @unique
+  referenceType String
+  referenceId   String
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+  from          Wallet       @relation("outgoing", fields: [fromWalletId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  to            Wallet       @relation("incoming", fields: [toWalletId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  trade         Trade?
+  payout        Payout?
+
+  @@index([fromWalletId])
+  @@index([toWalletId])
+  @@map("transfers")
+}
+
+model MarketEvent {
+  id                String           @id @default(uuid()) @db.Uuid
+  environmentId     String           @db.Uuid
+  marketId          String           @db.Uuid
+  version           BigInt
+  kind              MarketEventKind
+  occurredAt        DateTime         @db.Timestamptz
+  yesPrice          Decimal          @db.Decimal(30, 20)
+  tradeAmountMicros BigInt           @default(0)
+  tradeId           String?          @db.Uuid
+  payload           Json
+  market            Market           @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  deliveries        OutboxDelivery[]
+  trade             Trade?           @relation(fields: [tradeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([marketId, version])
+  @@index([environmentId, marketId, occurredAt])
+  @@map("market_events")
+}
+
+model OutboxDelivery {
+  id            String      @id @default(uuid()) @db.Uuid
+  marketEventId String      @db.Uuid
+  destination   String      @default("TIGER")
+  status        String      @default("PENDING")
+  attempts      Int         @default(0)
+  nextAttemptAt DateTime    @default(now()) @db.Timestamptz
+  leaseToken    String?     @db.Uuid
+  leaseUntil    DateTime?   @db.Timestamptz
+  deliveredAt   DateTime?   @db.Timestamptz
+  lastError     String?
+  event         MarketEvent @relation(fields: [marketEventId], references: [id], onDelete: Restrict)
+
+  @@unique([marketEventId, destination])
+  @@index([status, nextAttemptAt])
+  @@map("outbox_deliveries")
+}
+
+model Evidence {
+  id                   String       @id @default(uuid()) @db.Uuid
+  environmentId        String       @db.Uuid
+  marketId             String       @db.Uuid
+  provider             String
+  externalEventId      String
+  sourceUrl            String
+  observedAt           DateTime     @db.Timestamptz
+  receivedAt           DateTime     @db.Timestamptz
+  isFinal              Boolean
+  normalizedData       Json
+  rawPayload           Json
+  payloadHash          String
+  submittedByProfileId String?      @db.Uuid
+  createdAt            DateTime     @default(now()) @db.Timestamptz
+  market               Market       @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  settlements          Settlement[]
+  submitter            Profile?     @relation(fields: [submittedByProfileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, environmentId, marketId])
+  @@index([marketId])
+  @@index([submittedByProfileId], map: "evidence_submitter")
+  @@map("evidence")
+}
+
+model Settlement {
+  id                  String            @id @default(uuid()) @db.Uuid
+  environmentId       String            @db.Uuid
+  marketId            String            @unique @db.Uuid
+  outcome             SettlementOutcome
+  evidenceId          String            @db.Uuid
+  ruleVersion         Int
+  resolvedByProfileId String?           @db.Uuid
+  resolverVersion     String
+  settledAt           DateTime          @db.Timestamptz
+  receipt             Json
+  receiptHash         String
+  totalPayoutMicros   BigInt
+  market              Market            @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: Restrict)
+  evidence            Evidence          @relation(fields: [evidenceId, environmentId, marketId], references: [id, environmentId, marketId], onDelete: Restrict)
+  payouts             Payout[]
+  resolver            Profile?          @relation(fields: [resolvedByProfileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  commitments         ChainCommitment[]
+
+  @@unique([id, environmentId, marketId])
+  @@unique([marketId, environmentId])
+  @@index([evidenceId])
+  @@index([resolvedByProfileId], map: "settlement_resolver")
+  @@map("settlements")
+}
+
+model Payout {
+  id                 String     @id @default(uuid()) @db.Uuid
+  environmentId      String     @db.Uuid
+  marketId           String     @db.Uuid
+  settlementId       String     @db.Uuid
+  positionId         String     @unique @db.Uuid
+  walletId           String     @db.Uuid
+  amountMicros       BigInt
+  originalCostMicros BigInt
+  transferId         String?    @unique @db.Uuid
+  createdAt          DateTime   @default(now()) @db.Timestamptz
+  settlement         Settlement @relation(fields: [settlementId, environmentId, marketId], references: [id, environmentId, marketId], onDelete: Restrict)
+  position           Position   @relation(fields: [positionId, environmentId, marketId, walletId], references: [id, environmentId, marketId, walletId], onDelete: Restrict)
+  transfer           Transfer?  @relation(fields: [transferId], references: [id], onDelete: Restrict)
+
+  @@unique([positionId, environmentId, marketId, walletId])
+  @@index([walletId])
+  @@index([settlementId])
+  @@map("payouts")
+}
+
+model DemoAction {
+  id              String      @id @default(uuid()) @db.Uuid
+  environmentId   String      @db.Uuid
+  sequence        BigInt
+  virtualAt       DateTime    @db.Timestamptz
+  actorProfileId  String      @db.Uuid
+  actionType      String
+  input           Json
+  resultReference String
+  createdAt       DateTime    @default(now()) @db.Timestamptz
+  environment     Environment @relation(fields: [environmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  actor           Profile     @relation(fields: [actorProfileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([environmentId, sequence])
+  @@index([actorProfileId], map: "demo_actor")
+  @@map("demo_actions")
+}
+
+model ChainCommitment {
+  id                      String      @id @default(uuid()) @db.Uuid
+  environmentId           String      @db.Uuid
+  marketId                String      @db.Uuid
+  settlementId            String?     @db.Uuid
+  kind                    String
+  canonicalizationVersion String
+  payloadHash             String
+  network                 String      @default("devnet")
+  signerPublicKey         String
+  transactionSignature    String?
+  status                  String      @default("PENDING")
+  attempts                Int         @default(0)
+  nextAttemptAt           DateTime    @default(now()) @db.Timestamptz
+  confirmedAt             DateTime?   @db.Timestamptz
+  lastError               String?
+  market                  Market      @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: NoAction, onUpdate: NoAction)
+  settlement              Settlement? @relation(fields: [settlementId, environmentId, marketId], references: [id, environmentId, marketId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([marketId, kind])
+  @@index([settlementId], map: "chain_settlement")
+  @@map("chain_commitments")
+}

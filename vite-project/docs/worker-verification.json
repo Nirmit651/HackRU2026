@@ -1,0 +1,28 @@
+{
+  "environmentId": "819b2f7a-9c71-499f-8901-c8eadc5ffae1",
+  "settledMarkets": 6,
+  "actions": 11,
+  "reconciliation": {
+    "ok": true,
+    "errors": [],
+    "supplyMicros": "1000000000000",
+    "wallets": 27,
+    "markets": 6,
+    "transfers": 41,
+    "payouts": 6
+  },
+  "replay": {
+    "target": "c3b6355e-45b6-40b3-b21b-ed9d6ef39c45",
+    "actions": 11,
+    "equal": true,
+    "reconciliation": {
+      "ok": true,
+      "errors": [],
+      "supplyMicros": "1000000000000",
+      "wallets": 27,
+      "markets": 6,
+      "transfers": 41,
+      "payouts": 6
+    }
+  }
+}

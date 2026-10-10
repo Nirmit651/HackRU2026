@@ -1,19 +1,163 @@
-# React + Vite
+# Scarlet Exchange
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Rutgers campus prediction-market demo for HackRU 2026. Students spend **play $R**, buy YES/NO shares, receive settlement receipts, and compete by **cash balance**. No purchase, cash-out, secondary selling, or official Rutgers affiliation.
 
-Currently, two official plugins are available:
+The existing repository was a Vite React starter with no Supabase/Tiger application code. This implementation preserves Vite/npm and adds a TypeScript Express API/worker and Prisma 7 PostgreSQL engine. Intended sponsor submissions: **Lucera + Tiger Data**, **Maverick** track. Optional Solana functionality is separate from prize selection; no third submission is assumed.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Local setup
 
-## React Compiler
+Requirements: Node 22+, npm and PostgreSQL 15+. Verified with Node 26.4, Postgres.app 18.6, and port 55432.
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+```sh
+cd vite-project
+npm ci
+cp .env.example .env
+# For offline demo, leave SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY empty.
+# Set DATABASE_URL and DIRECT_DATABASE_URL to your local PostgreSQL database.
+npm run db:generate
+npm run db:migrate
+npm run demo:new
+npm run api
+```
 
-Note: This will impact Vite dev & build performances.
-You can also try [the experimental native React Compiler support in plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md#rust-react-compiler) by using `compiler: true` in the plugin options instead of using the Babel plugin.
+In two additional terminals, from `vite-project`:
 
-## Expanding the ESLint configuration
+```sh
+npm run dev
+npm run worker
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Open http://localhost:5173, select a DEMO run, and **Join the market**. The local development sign-in creates a separate $R 1,000 wallet. It binds the API to loopback, is disabled in production, and cannot operate LIVE accounts. Restarting the API invalidates local tokens; sign in again. Root npm scripts forward common commands to the app directory.
+
+Example isolated PostgreSQL initialization (use a fresh directory/port if these exist):
+
+```sh
+initdb -D /tmp/hackru-postgres -A trust -U hackru --encoding=UTF8 --no-locale
+pg_ctl -D /tmp/hackru-postgres -l /tmp/hackru-postgres.log \
+  -o '-p 55432 -h 127.0.0.1 -k /tmp -c max_connections=60 -c shared_buffers=128MB' start
+createdb -h 127.0.0.1 -p 55432 -U hackru hackru
+# When finished:
+pg_ctl -D /tmp/hackru-postgres stop
+```
+
+Never reset a shared database. Local tests insert isolated environments and preserve audit rows.
+
+## Supabase setup
+
+Target project: `uyjnsuazcxwzoxauhmpm`. Its project-scoped Codex MCP was added and OAuth reported successful login. The preexisting plugin connection lacked project access; the new tools were not exposed in the active session. **No hosted migrations, hosted authentication tests, or hosted Realtime tests are claimed.** No hosted database was modified.
+
+1. Set `SUPABASE_URL` and the browser-safe publishable key. Never expose a service key or database URL to the browser.
+2. Set `DIRECT_DATABASE_URL` to a migration-owner connection and `DATABASE_URL` to the backend runtime connection, using TLS verification. Do not disable certificate checks.
+3. Review and run `npm run db:migrate`. Prisma owns application tables only. Version-controlled SQL preserves RLS, constraints, grants and `market_events` publication membership; it does not manage auth/storage/realtime schemas.
+4. Apply `prisma/runtime-role.sql` once as migration owner. Create a login/password out of band, grant it `scarlet_runtime`, and use it for the runtime URL. This backend-only role has explicit policies and grants, without DELETE or audit UPDATE. Application authorization checks the verified user on every private request.
+5. Enable email sign-in; allow redirects to the web origin. Set `APP_ORIGIN` exactly, `LOCAL_DEMO_AUTH=false`, and `NODE_ENV=production`. Set admins through server-controlled `app_metadata.role=admin`, never user metadata.
+6. Run `npm run live:new -- <unique-key>` to create a finite LIVE treasury. Admin includes six draft templates. Replace placeholders and verify the source, event/station/trip IDs, cutoff, window, units, finality and VOID policy before opening.
+7. Run hosted Supabase security/performance advisors and confirm browser denial for private tables and successful public-event subscriptions. These hosted checks remain outstanding.
+
+MCP is a development connection; runtime still needs its own URLs/keys. `codex mcp get supabase` verified configuration. `/mcp` is an interactive Codex command, not a shell command. Reload Codex if newly added tools are unavailable.
+
+## Demo walkthrough
+
+1. Join in one browser; open the same environment/market in another.
+2. Admin → **Start**, optionally 2×/5×/10×. The worker must be running.
+3. Buy ten YES shares. Cash and holdings update, and the second client recovers the quote/chart update. Twenty labeled synthetic bots use the same engine.
+4. At 120 virtual seconds trading closes; at 150 seconds synthetic final evidence settles all six categories. Pause holds virtual time.
+5. Open and download a receipt, then check portfolio and cash leaderboard. Bots, treasury and market-maker wallets are excluded from human rankings.
+6. **New run** inserts a fresh environment. It never deletes prior or LIVE data.
+
+```sh
+npm run demo:export -- <environment-uuid>
+npm run demo:replay -- <environment-uuid>
+# Optional: with worker stopped, create a paused run with executed bot history.
+npm run demo:showcase
+# With worker running, verify all six markets settle and replay matches.
+npm run demo:verify-worker
+```
+
+The export includes seed, fixture version, initial clock, ordered accepted inputs, expected market totals and reconciliation. Replay includes recorded human purchases and remaps market/actor IDs. Rejected inputs do not affect economic state and are not logged. A seed alone cannot reproduce different human actions. Sequential replay is separate from concurrent benchmarking. History comes only from executed trades/events.
+
+## Tiger analytics
+
+Tiger MCP was exercised and returned **no services**. `TIGER_DATABASE_URL` was not supplied. The normal Tiger path is implemented, but hosted Timescale migrations, aggregate behavior and performance remain unverified.
+
+```sh
+# Configure the separate server-only Tiger TLS connection first.
+npm run tiger:migrate
+npm run worker
+npm run tiger:benchmark
+```
+
+`tiger/001_history.sql` creates a time-partitioned hypertable, `(event_time,event_id)` dedupe key, history index and one-minute OHLC/trade-count/volume continuous aggregate. First/last price orders by unique market version; only trade events count as trades. Real-time aggregation and the refresh policy are explicit.
+
+The exporter uses expiring leases, backoff, sanitized errors and a single-worker lock. It preserves original IDs/timestamps and acknowledges only after an idempotent insert. Earlier pending market events block later ones. The exported watermark is contiguous, not a maximum. History reads Tiger through it and merges the committed PostgreSQL tail; outages return an explicitly labeled `SUPABASE_FALLBACK`. Keep the full authoritative ledger/event log. Admin exposes pending/failed counts and oldest pending event time.
+
+Chart history uses raw events; the minute aggregate is used by the analytical benchmark and available for future long-range rendering. Queries cap history at 10,000 events and report `truncated`. A changed Tiger destination requires rebuilding its copy and reviewing delivery-state reset; existing acknowledgments refer to the configured destination.
+
+For development MCP on another machine:
+
+```sh
+brew install --cask timescale/tap/tiger-cli
+tiger auth login
+tiger mcp install codex
+# or tiger mcp install cursor
+```
+
+Restart the coding assistant. The hosted docs MCP supplies documentation; CLI MCP supplies account/database access. A working setup was not reinstalled here.
+
+## Providers and bus boundary
+
+See [BUS_ADAPTER.md](docs/BUS_ADAPTER.md). The teammate owns ingestion. `BUS_ADAPTER_URL`/token supplies display snapshots; `EVIDENCE_ADAPTER_URL`/token supplies normalized final observations. Neither fetches a browser-supplied URL. Missing feeds show unavailable; LIVE feeds reject simulated data. MapLibre loads only for bus markets. Set `MAP_STYLE_URL` to a permitted tile/style provider; attribution is preserved. Unconfigured maps show coordinates/unavailability rather than invented motion.
+
+CFBD football and CBBD basketball adapters validate finality, scores, Rutgers participation, game IDs and cutoff before play. CBBD 2027 denotes 2026–27. No broader varsity coverage is implied. The adapters were tested using labeled fixtures; authenticated live requests were not made. The used schemas do not supply a verified finish timestamp, so `observedAt` means the adapter observed final status at fetch time. Frozen sports windows must include that observation.
+
+Weather/bus settlement uses the normalized boundary; concert/election resolution uses authorized manual evidence including official channels checked. An outage is never evidence of NO. Missing results stay pending until evidence invokes the frozen VOID policy.
+
+## Optional Solana Devnet
+
+```sh
+# Inject a funded development signer through server secret storage.
+# Set SOLANA_ENABLED=true and SOLANA_SECRET_KEY; never commit it.
+npm run chain:worker
+```
+
+A separate worker queues rule hashes while DRAFT and receipt hashes after settlement. It uses Kit 8, v1 transactions and the memo program with simulation enabled. RPC genesis must match official Devnet. Verification recomputes canonical SHA-256 and checks a confirmed successful transaction, expected signer, memo program and exact payload. Precommit status additionally requires block time strictly before `opensAt`. This proves publication/integrity, not the outcome's truth. Accounting is independent of chain availability.
+
+No signer/funds were supplied and no transaction was sent. Parsed-memo/tamper checks have unit tests; live submission remains unverified. A crash between submission and signature persistence can repeat the same public memo, never a payout.
+
+## Verification and performance
+
+```sh
+npm run build
+npm run lint
+npm test
+npm run test:db
+# API/Vite running with local demo auth:
+npx playwright install chromium
+npm run test:e2e
+npm run benchmark
+# Separate local analytics database, NOT a hosted Timescale test:
+createdb -h 127.0.0.1 -p 55432 -U hackru hackru_analytics_test
+TIGER_DATABASE_URL=postgresql://hackru@127.0.0.1:55432/hackru_analytics_test npm run test:outbox
+```
+
+Tests cover real transactions, concurrent grants/spending/retries/settlement, post-close retry, rollback, runner/environment restrictions, YES/NO/VOID payouts, deterministic replay, recovery gaps, auth/origin denial, worker pause and outbox crash/retry/watermark behavior. The browser flow covers two clients from login through buy, live quote recovery, settlement, receipt and leaderboard, plus mobile overflow and browser errors. Locally it exercises polling fallback, not hosted Realtime.
+
+[benchmark.json](docs/benchmark.json) records an actual run: 20 clients, 1,000 attempts, 1,000 accepted, **236.1 trades/s**, **p50 82.2 ms**, **p95 92.4 ms**, 4.24 seconds after 20 warmup buys. Node 26.4, PostgreSQL 18.6, Apple M4 Max (14 logical CPUs), 36 GiB host RAM; PostgreSQL 128 MB shared buffers/60 connections. Shared host, no CPU quota. Six markets and frozen DEMO clock; provider/network calls excluded. The environment lock intentionally serializes deterministic demo accounting and is the main contention point. This is not a hosted/LIVE throughput claim. Reconciliation passed with exactly $R 1,000,000 supply. An initial invalid-key benchmark was corrected before this recorded run.
+
+`tiger:benchmark` inserts an isolated disclosed 100,000-row synthetic analytics dataset, refreshes the aggregate, warms queries and reports 20-run history/aggregate p50/p95. It has **not run against Tiger**; no Tiger latency, exporter-lag number, compression gain or speedup is claimed. Simulated event timestamps are not wall-clock lag measurements.
+
+## Deployment and limitations
+
+Build and serve `dist` behind HTTPS, routing `/api` to the Node process. Start `npm run api` with production config and a separately supervised `npm run worker`. Start `chain:worker` only if configured. Apply migrations first. Workers finish current work and disconnect on SIGINT/SIGTERM; do not run them inside serverless requests. Review rollback as a forward migration and retain audit history. No deployment was published and no competition entry submitted.
+
+Limits: per-process in-memory rate limits (use a shared limiter before scaling), bounded list/history/portfolio pages, buy-and-hold only, fixed synthetic demo fixtures, no automated election/concert scraping, no arbitrary sports coverage, raw chart events rather than aggregate ranges, and a large lazy-loaded MapLibre bundle. Prisma/pg emits a concurrent-query deprecation warning during transaction batches; checks pass and pg is pinned below 9.
+
+Team-built: ledger, LMSR, auth boundaries, frozen rules/evidence, settlement/receipts, recovery, exporter, adapters, demo/replay, UI and verification scripts. Third-party: React/Vite, Express, Supabase, Prisma/pg, Decimal.js, Zod, Tiger/TimescaleDB, TradingView Lightweight Charts, MapLibre, Lucide, Solana Kit/memo, Vitest and Playwright. No LLM API is required. Existing `.agents` and `skills-lock.json` were preserved.
+
+More: [architecture](docs/ARCHITECTURE.md), [API](docs/API.md), [verification status](docs/VERIFICATION.md).
+
+## References checked
+
+[Supabase Prisma](https://supabase.com/docs/guides/database/prisma), [Realtime](https://supabase.com/docs/guides/realtime/subscribing-to-database-changes), [explicit Data API grants](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically), [Prisma 7](https://www.prisma.io/docs/guides/upgrade-prisma-orm/v7), [Tiger indexes](https://www.tigerdata.com/docs/build/performance-optimization/hypertables-and-unique-indexes), [Tiger aggregates](https://www.tigerdata.com/docs/learn/continuous-aggregates), [Lightweight Charts](https://tradingview.github.io/lightweight-charts/docs), [MapLibre](https://maplibre.org/maplibre-gl-js/docs/), [CFBD games](https://apinext.collegefootballdata.com/api/games), [CBBD games](https://api.collegebasketballdata.com/api/games), [Solana memo](https://solana.com/developers/cookbook/transactions/add-memo).
+
+The [HackRU MLH prize page](https://www.mlh.com/events/hackru-21/prizes) lists Tiger and Solana, but does not establish the supplied Lucera brief or reported two-superlative limit. The selected targets remain Lucera + Tiger as instructed.
