@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: scarlet-market-api
+    runtime: node
+    rootDir: vite-project
+    buildCommand: npm ci && npm run db:generate
+    startCommand: npm run api
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: LOCAL_DEMO_AUTH
+        value: "false"
+      - key: NODE_ENV
+        value: production
+
+  - type: worker
+    name: scarlet-market-worker
+    runtime: node
+    rootDir: vite-project
+    buildCommand: npm ci && npm run db:generate
+    startCommand: npm run worker
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: LOCAL_DEMO_AUTH
+        value: "false"
+      - key: NODE_ENV
+        value: production

@@ -27,12 +27,31 @@ app.set("json replacer", (_key: string, v: unknown) =>
 );
 app.use(express.json({ limit: "32kb" }));
 const rates = new Map<string, { start: number; count: number }>();
+function allowedMutationOrigin(origin: string, req: express.Request) {
+  // The one-command local demo can be opened from any local dev origin.
+  // Hosted/production requests still require the exact configured origin.
+  if (localDemo) return true;
+  if (process.env.APP_ORIGIN) return origin === process.env.APP_ORIGIN;
+  const protocol = req.headers["x-forwarded-proto"] ?? req.protocol;
+  return origin === `${String(protocol).split(",")[0]}://${req.get("host")}`;
+}
 app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (localDemo || origin === process.env.APP_ORIGIN)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    res.setHeader("Vary", "Origin");
+  }
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
     const origin = req.headers.origin;
-    if (origin && origin !== process.env.APP_ORIGIN) {
+    if (origin && !allowedMutationOrigin(origin, req)) {
       next(new AppError("ORIGIN_REJECTED", 403));
       return;
     }
@@ -521,7 +540,7 @@ app.use(
     res.status(503).json({ error: { code: "TEMPORARILY_UNAVAILABLE" } });
   },
 );
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   const server = app.listen(
     Number(process.env.PORT ?? 3001),
     localDemo ? "127.0.0.1" : "0.0.0.0",
@@ -534,3 +553,4 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }
+export default app;

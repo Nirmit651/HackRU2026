@@ -15,7 +15,13 @@ import {
   finish,
   close,
 } from "./core";
-import { games, type Game } from "./providers";
+import {
+  espnGame,
+  espnGames,
+  espnScheduleUrl,
+  games,
+  type Game,
+} from "./providers";
 import { enqueue } from "./queue";
 
 export function seasons(type: string, at: Date) {
@@ -26,11 +32,22 @@ export function seasons(type: string, at: Date) {
       : local.year;
   return [season - 1, season, season + 1];
 }
-export function sportsResult(g: Game, teamId: number): boolean | "VOID" | null {
+export type SportsMarketType = "win" | "team-points" | "total-points";
+export function sportsResult(
+  g: Game,
+  teamId: number,
+  marketType: SportsMarketType = "win",
+  threshold?: number,
+): boolean | "VOID" | null {
   ensure(g.homeId === teamId || g.awayId === teamId, "SPORTS_TEAM_MISMATCH");
   if (g.status === "cancelled") return "VOID";
   if (g.status !== "final" || g.homePoints === null || g.awayPoints === null)
     return null;
+  if (marketType === "team-points")
+    return (g.homeId === teamId ? g.homePoints : g.awayPoints) >
+      (threshold ?? 0);
+  if (marketType === "total-points")
+    return g.homePoints + g.awayPoints > (threshold ?? 0);
   if (g.homePoints === g.awayPoints) return "VOID";
   return g.homeId === teamId
     ? g.homePoints > g.awayPoints
@@ -42,20 +59,24 @@ export async function generateSports(
 ) {
   const at = await nowFor(config.environmentId),
     s = settingsSchema.parse(config.settings),
-    provider = config.type === "football" ? "CFBD" : "CBBD";
+    sport = config.type === "football" ? "football" : "basketball",
+    provider = s.provider === "ESPN" ? `ESPN_${config.type.toUpperCase()}` : s.provider;
   const env = await db.environment.findUniqueOrThrow({
     where: { id: config.environmentId },
   });
   if (supplied) ensure(env.kind === "DEMO", "SIMULATED_LIVE_SCHEDULE");
-  const schedule =
+  const scheduleRows =
     supplied ??
-    (
-      await Promise.all(
-        seasons(config.type, at).map((season) =>
-          games(env.id, provider, season, 21600),
-        ),
-      )
-    ).flat();
+    (s.provider === "ESPN"
+      ? await espnGames(env.id, sport, 21600)
+      : (
+          await Promise.all(
+            seasons(config.type, at).map((season) =>
+              games(env.id, provider as "CFBD" | "CBBD", season, 21600),
+            ),
+          )
+        ).flat());
+  const schedule = [...new Map(scheduleRows.map((game) => [game.id, game])).values()];
   const candidates = schedule
     .filter(
       (g) =>
@@ -65,7 +86,7 @@ export async function generateSports(
         +new Date(g.start) <= +add(at, s.horizonDays * 86400),
     )
     .sort((a, b) => +new Date(a.start) - +new Date(b.start))
-    .slice(0, 5);
+    .slice(0, s.maxGames);
   let created = 0;
   for (const g of candidates) {
     const teamId =
@@ -82,72 +103,90 @@ export async function generateSports(
     const competition =
         config.type === "football" ? "NCAA football" : "NCAA men's basketball",
       opponent = g.homeId === teamId ? g.away : g.home;
-    const key = `sports:${provider}:${config.type}:${g.id}:rutgers-win`;
-    if (
-      await db.market.findUnique({
-        where: {
-          environmentId_generatorKey: {
-            environmentId: env.id,
-            generatorKey: key,
-          },
-        },
-      })
-    )
-      continue;
     const start = new Date(g.start),
       cutoff = add(start, -300),
       deadline = add(start, 48 * 3600);
-    const condition = `YES: Rutgers wins; NO: ${opponent} wins. Two matching explicit final results at least 60 seconds apart required. Ties and cancellations VOID. A schedule change closes trading without reopening. Await postponed completion until 48 hours after the original start, then VOID.`;
-    const r = rule(
-      config.type as "football" | "basketball",
-      env.kind === "DEMO" ? `demo-${provider}` : provider,
-      g.id,
-      cutoff,
-      at,
-      deadline,
-      deadline,
-      {
-        competition,
-        season: g.season,
-        teamId,
-        opponentId: g.homeId === teamId ? g.awayId : g.homeId,
-        opponent,
-        originalStart: g.start,
-        homeId: g.homeId,
-        awayId: g.awayId,
-        confirmationSeconds: 60,
-      },
-      condition,
-    );
-    r.tiePolicy = "VOID";
-    r.postponementPolicy = "WAIT_48H_THEN_VOID";
-    const market = await createAutomatedMarket({
-      environmentId: env.id,
-      generatorKey: key,
-      templateVersion: 1,
-      slug: slug(key),
-      title: `Will Rutgers beat ${opponent} on ${DateTime.fromISO(g.start).setZone(zone).toISODate()}?`,
-      description: `${competition}. ${condition}`,
-      category: "VARSITY_SPORTS",
-      opensAt: iso(at),
-      closesAt: iso(cutoff),
-      expectedResolutionAt: iso(add(start, 4 * 3600)),
-      resolutionRule: r,
-      sourceUrl:
-        provider === "CFBD"
-          ? "https://api.collegefootballdata.com/games"
-          : "https://api.collegebasketballdata.com/games",
-      context: {
-        competition,
-        season: g.season,
-        teamId,
-        opponent,
-        homeAway: g.homeId === teamId ? "home" : "away",
-        scheduledStart: g.start,
-        sourceSnapshot: g.raw,
-      },
-    });
-    if (!market.creationReplayed) created++;
+    const thresholds =
+      config.type === "football"
+        ? { team: s.footballRutgersPointsThreshold, total: s.footballTotalPointsThreshold }
+        : { team: s.basketballRutgersPointsThreshold, total: s.basketballTotalPointsThreshold };
+    for (const marketType of s.marketTypes) {
+      const threshold = marketType === "win" ? undefined : marketType === "team-points" ? thresholds.team : thresholds.total;
+      const key = `sports:${provider}:${config.type}:${g.id}:${marketType}`;
+      const condition =
+        marketType === "win"
+          ? `YES: Rutgers wins; NO: ${opponent} wins.`
+          : marketType === "team-points"
+            ? `YES: Rutgers scores more than ${threshold} points; NO: Rutgers scores ${threshold} or fewer points.`
+            : `YES: Rutgers and ${opponent} combine for more than ${threshold} points; NO: they combine for ${threshold} or fewer points.`;
+      const fullCondition = `${condition} Two matching explicit final results at least 60 seconds apart required. Cancellations VOID. A schedule change closes trading without reopening. Await postponed completion until 48 hours after the original start, then VOID.`;
+      const r = rule(
+        config.type as "football" | "basketball",
+        env.kind === "DEMO" ? `demo-${provider}` : provider,
+        g.id,
+        cutoff,
+        at,
+        deadline,
+        deadline,
+        {
+          competition,
+          season: g.season,
+          teamId,
+          opponentId: g.homeId === teamId ? g.awayId : g.homeId,
+          opponent,
+          originalStart: g.start,
+          homeId: g.homeId,
+          awayId: g.awayId,
+          confirmationSeconds: 60,
+          marketType,
+          ...(threshold === undefined ? {} : { threshold }),
+        },
+        fullCondition,
+      );
+      r.tiePolicy = marketType === "win" ? "VOID" : "NO";
+      r.postponementPolicy = "WAIT_48H_THEN_VOID";
+      if (threshold !== undefined) {
+        r.threshold = threshold;
+        r.comparison = "GT";
+      }
+      const title =
+        marketType === "win"
+          ? `Will Rutgers beat ${opponent} on ${DateTime.fromISO(g.start).setZone(zone).toISODate()}?`
+          : marketType === "team-points"
+            ? `Will Rutgers score over ${threshold} points vs ${opponent}?`
+            : `Will Rutgers–${opponent} go over ${threshold} total points?`;
+      const market = await createAutomatedMarket({
+        environmentId: env.id,
+        generatorKey: key,
+        templateVersion: 1,
+        slug: slug(key),
+        title,
+        description: `${competition}. ${fullCondition}`,
+        category: "VARSITY_SPORTS",
+        opensAt: iso(at),
+        closesAt: iso(cutoff),
+        expectedResolutionAt: iso(add(start, 4 * 3600)),
+        resolutionRule: r,
+        sourceUrl:
+          s.provider === "ESPN"
+            ? espnScheduleUrl(sport)
+            : provider === "CFBD"
+              ? "https://api.collegefootballdata.com/games"
+              : "https://api.collegebasketballdata.com/games",
+        context: {
+          competition,
+          season: g.season,
+          teamId,
+          opponent,
+          homeAway: g.homeId === teamId ? "home" : "away",
+          scheduledStart: g.start,
+          marketType,
+          ...(threshold === undefined ? {} : { threshold }),
+          sourceSnapshot: g.raw,
+        },
+      });
+      if (!market.creationReplayed) created++;
+    }
   }
   return {
     created,
@@ -159,17 +198,23 @@ export async function monitorSports(m: Market, supplied?: Game) {
   const at = await nowFor(m.environmentId),
     r = ruleSchema.parse(m.resolutionRule),
     s = r.automation!.settings,
+    type = r.automation!.type === "football" ? "football" : "basketball",
+    espn = m.provider.includes("ESPN"),
     provider = m.provider.endsWith("CFBD") ? "CFBD" : "CBBD";
   const env = await db.environment.findUniqueOrThrow({
     where: { id: m.environmentId },
   });
   if (supplied) ensure(env.kind === "DEMO", "SIMULATED_LIVE_RESULT");
+  const eventId = m.externalEventId;
+  ensure(eventId, "SPORTS_EVENT_ID_MISSING");
   let game = supplied;
   if (!game && env.kind === "LIVE") {
     try {
-      game = (await games(env.id, provider, Number(s.season))).find(
-        (g) => g.id === m.externalEventId,
-      );
+      game = espn
+        ? await espnGame(env.id, type, eventId)
+        : (await games(env.id, provider, Number(s.season))).find(
+            (g) => g.id === eventId,
+          );
     } catch {
       /* timeout policy still runs on outages */
     }
@@ -209,7 +254,13 @@ export async function monitorSports(m: Market, supplied?: Game) {
     game = undefined;
   }
   if (game) {
-    const result = sportsResult(game, Number(s.teamId)),
+    const marketType = (s.marketType ?? "win") as SportsMarketType,
+      result = sportsResult(
+        game,
+        Number(s.teamId),
+        marketType,
+        typeof s.threshold === "number" ? s.threshold : undefined,
+      ),
       key = `sports-result:${m.id}`;
     const current = hash({
       status: game.status,
@@ -238,6 +289,8 @@ export async function monitorSports(m: Market, supplied?: Game) {
           confirmedAt: iso(at),
           finalResponse: game.raw,
           teamId: s.teamId,
+          marketType,
+          threshold: s.threshold ?? null,
         },
         at,
       );
@@ -287,16 +340,29 @@ export async function monitorSports(m: Market, supplied?: Game) {
   );
 }
 export async function reviewSports(m: Market) {
-  const s = ruleSchema.parse(m.resolutionRule).automation!.settings;
-  const game = (
-    await games(
-      m.environmentId,
-      m.provider === "CFBD" ? "CFBD" : "CBBD",
-      Number(s.season),
-    )
-  ).find((g) => g.id === m.externalEventId);
+  const parsed = ruleSchema.parse(m.resolutionRule),
+    s = parsed.automation!.settings,
+    type = parsed.automation!.type === "football" ? "football" : "basketball",
+    eventId = m.externalEventId;
+  ensure(eventId, "SPORTS_EVENT_ID_MISSING");
+  const game = m.provider.includes("ESPN")
+      ? await espnGame(m.environmentId, type, eventId, 60).catch(
+          () => undefined,
+        )
+      : (
+          await games(
+            m.environmentId,
+            m.provider === "CFBD" ? "CFBD" : "CBBD",
+            Number(s.season),
+          )
+        ).find((g) => g.id === eventId);
   if (!game) return;
-  const result = sportsResult(game, Number(s.teamId));
+  const result = sportsResult(
+    game,
+    Number(s.teamId),
+    (s.marketType ?? "win") as SportsMarketType,
+    typeof s.threshold === "number" ? s.threshold : undefined,
+  );
   const settled = await db.settlement.findUniqueOrThrow({
     where: { marketId: m.id },
   });

@@ -31,6 +31,8 @@ npm run worker
 
 Open http://localhost:5173, select a DEMO run, and **Join the market**. The local development sign-in creates a separate $R 1,000 wallet. It binds the API to loopback, is disabled in production, and cannot operate LIVE accounts. Restarting the API invalidates local tokens; sign in again. Root npm scripts forward common commands to the app directory.
 
+After the first-time setup, the root shortcut `npm run demo` runs `db:generate`, applies migrations, creates a fresh DEMO run, and starts the API, Vite frontend, and worker together. Open http://localhost:5173 and press Ctrl+C to stop the demo. PostgreSQL must still be running locally.
+
 Example isolated PostgreSQL initialization (use a fresh directory/port if these exist):
 
 ```sh
@@ -157,6 +159,10 @@ Limits: per-process in-memory rate limits (use a shared limiter before scaling),
 Team-built: ledger, LMSR, auth boundaries, frozen rules/evidence, settlement/receipts, recovery, exporter, adapters, demo/replay, UI and verification scripts. Third-party: React/Vite, Express, Supabase, Prisma/pg, Decimal.js, Zod, Tiger/TimescaleDB, TradingView Lightweight Charts, MapLibre, Lucide, Solana Kit/memo, Vitest and Playwright. No LLM API is required. Existing `.agents` and `skills-lock.json` were preserved.
 
 More: [architecture](docs/ARCHITECTURE.md), [API](docs/API.md), [verification status](docs/VERIFICATION.md).
+
+## GitHub Pages hosting
+
+GitHub Pages can host the frontend, but not this project's Express API, PostgreSQL database, or worker. Follow [`docs/DEPLOY_GITHUB_PAGES.md`](../docs/DEPLOY_GITHUB_PAGES.md) to deploy the API/worker separately, configure the `API_ORIGIN` repository variable, enable Pages, and configure Supabase email-login redirects.
 
 ## References checked
 

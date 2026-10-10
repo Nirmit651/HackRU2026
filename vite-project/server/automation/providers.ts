@@ -168,6 +168,173 @@ export type Game = {
   status: string;
   raw: unknown;
 };
+
+export type EspnSport = "football" | "basketball";
+export const espnScheduleUrl = (sport: EspnSport) =>
+  sport === "football"
+    ? "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/164/schedule"
+    : "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/teams/164/schedule";
+export const espnScoreboardUrl = (sport: EspnSport, date?: string) => {
+  const base =
+    sport === "football"
+      ? "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=500"
+      : "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&limit=500";
+  return date ? `${base}&dates=${date}` : base;
+};
+const espnSummaryUrl = (sport: EspnSport, eventId: string) =>
+  `${sport === "football" ? "https://site.api.espn.com/apis/site/v2/sports/football/college-football" : "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball"}/summary?event=${encodeURIComponent(eventId)}`;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+function numberValue(value: unknown): number | null {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function espnScore(value: unknown) {
+  const r = record(value);
+  return numberValue(r?.value ?? r?.displayValue ?? value);
+}
+function espnEventSource(raw: unknown, eventId?: string) {
+  const root = record(raw);
+  if (!root) return null;
+  const header = record(root.header);
+  const event = header ?? root;
+  if (Array.isArray(event.events)) {
+    const found = event.events.find((candidate) => {
+      const r = record(candidate);
+      return !eventId || String(r?.id ?? "") === eventId;
+    });
+    if (found) return record(found);
+  }
+  if (eventId && event.id && String(event.id) !== eventId) return null;
+  return event;
+}
+export function normalizeEspnGame(raw: unknown, eventId?: string): Game {
+  const event = espnEventSource(raw, eventId),
+    competition = record(
+      Array.isArray(event?.competitions) ? event.competitions[0] : null,
+    );
+  ensure(event && competition, "ESPN_EVENT_SHAPE_INVALID");
+  const competitors = Array.isArray(competition.competitors)
+    ? competition.competitors.map(record).filter(Boolean)
+    : [];
+  ensure(competitors.length >= 2, "ESPN_COMPETITORS_MISSING");
+  const home = competitors.find((c) => c?.homeAway === "home") ?? competitors[0],
+    away = competitors.find((c) => c?.homeAway === "away") ?? competitors[1],
+    homeTeam = record(home?.team),
+    awayTeam = record(away?.team),
+    homeId = numberValue(homeTeam?.id),
+    awayId = numberValue(awayTeam?.id),
+    start = String(event.date ?? competition.date ?? "");
+  ensure(
+    event.id !== undefined && homeId !== null && awayId !== null && start,
+    "ESPN_EVENT_FIELDS_MISSING",
+  );
+  const status = record(competition.status),
+    statusType = record(status?.type),
+    statusText = `${statusType?.name ?? ""} ${statusType?.state ?? ""} ${statusType?.description ?? ""} ${status?.type ?? ""}`.toLowerCase(),
+    cancelled = /cancel|postpon/.test(statusText),
+    final = Boolean(statusType?.completed) || /final|post/.test(statusText),
+    statusValue = cancelled
+      ? /postpon/.test(statusText)
+        ? "postponed"
+        : "cancelled"
+      : final
+        ? "final"
+        : /in_progress|in progress|live/.test(statusText)
+          ? "in_progress"
+          : "scheduled";
+  return {
+    id: String(event.id),
+    season:
+      numberValue(record(event.season)?.year) ?? new Date(start).getUTCFullYear(),
+    start,
+    tbd: !start || /tbd|time to be determined/i.test(statusText),
+    homeId,
+    awayId,
+    home: String(homeTeam?.displayName ?? homeTeam?.shortDisplayName ?? "Home"),
+    away: String(awayTeam?.displayName ?? awayTeam?.shortDisplayName ?? "Away"),
+    homePoints: espnScore(home?.score),
+    awayPoints: espnScore(away?.score),
+    status: statusValue,
+    raw,
+  };
+}
+function espnEvents(raw: unknown) {
+  const root = record(raw);
+  return Array.isArray(root?.events) ? root.events : [];
+}
+export async function espnGames(
+  environmentId: string,
+  sport: EspnSport,
+  ttl = 21600,
+) {
+  const schedule = await providerJson(
+    environmentId,
+    espnScheduleUrl(sport),
+    { Accept: "application/json" },
+    ttl,
+  );
+  const byId = new Map(
+    espnEvents(schedule).map((raw) => {
+      const game = normalizeEspnGame(raw);
+      return [game.id, game] as const;
+    }),
+  );
+  if (ttl <= 60) {
+    const scoreboard = await providerJson(
+      environmentId,
+      espnScoreboardUrl(sport),
+      { Accept: "application/json" },
+      60,
+    );
+    for (const raw of espnEvents(scoreboard)) {
+      const game = normalizeEspnGame(raw);
+      if (byId.has(game.id)) byId.set(game.id, game);
+    }
+  }
+  // ESPN sometimes leaves the team schedule empty during basketball
+  // preseason even though dated scoreboard pages already contain the games.
+  // Scan a bounded window only in that case, and keep Rutgers events only.
+  if (sport === "basketball" && byId.size === 0) {
+    const at = new Date();
+    for (let offset = 0; offset < 45 && byId.size < 3; offset++) {
+      const date = new Date(+at + offset * 86400000)
+        .toISOString()
+        .slice(0, 10)
+        .replaceAll("-", "");
+      const scoreboard = await providerJson(
+        environmentId,
+        espnScoreboardUrl(sport, date),
+        { Accept: "application/json" },
+        ttl,
+      );
+      for (const raw of espnEvents(scoreboard)) {
+        const game = normalizeEspnGame(raw);
+        if (game.homeId === 164 || game.awayId === 164)
+          byId.set(game.id, game);
+      }
+    }
+  }
+  return [...byId.values()];
+}
+export async function espnGame(
+  environmentId: string,
+  sport: EspnSport,
+  eventId: string,
+  ttl = 60,
+) {
+  const raw = await providerJson(
+    environmentId,
+    espnSummaryUrl(sport, eventId),
+    { Accept: "application/json" },
+    ttl,
+  );
+  return normalizeEspnGame(raw, eventId);
+}
 export function normalizeGame(provider: "CFBD" | "CBBD", raw: unknown): Game {
   if (provider === "CFBD") {
     const g = football.parse(raw);

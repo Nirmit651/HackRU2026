@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
+    "build:api": "esbuild server/api.ts --bundle --platform=node --format=esm --packages=external --outfile=.vercel-api/server.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "api": "tsx server/api.ts",
@@ -21,6 +22,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "demo:new": "tsx scripts/demo.ts",
+    "demo:run": "tsx scripts/run-demo.ts",
     "demo:showcase": "tsx scripts/showcase.ts",
     "demo:verify-worker": "tsx scripts/verify-worker.ts",
     "demo:replay": "tsx scripts/demo.ts replay",
@@ -30,7 +32,8 @@
     "tiger:migrate": "tsx scripts/tiger-migrate.ts",
     "tiger:benchmark": "tsx scripts/tiger-benchmark.ts",
     "demo:export": "tsx scripts/export-demo.ts",
-    "live:new": "tsx scripts/live.ts"
+    "live:new": "tsx scripts/live.ts",
+    "rutgers:setup": "tsx scripts/rutgers.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
@@ -66,6 +69,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
     "embedded-postgres": "^18.4.0-beta.17",
+    "esbuild": "^0.28.2",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",

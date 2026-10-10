@@ -22,6 +22,25 @@ export const settingsSchema = z
     maxWaitHours: z.number().min(12).max(72).default(36),
     horizonDays: z.number().int().min(1).max(60).default(30),
     teamId: z.number().int().positive().optional(),
+    provider: z.enum(["ESPN", "CFBD", "CBBD"]).default("ESPN"),
+    maxGames: z.number().int().min(1).max(5).default(1),
+    marketTypes: z
+      .array(z.enum(["win", "team-points", "total-points"]))
+      .min(1)
+      .max(3)
+      .default(["win", "team-points", "total-points"]),
+    footballRutgersPointsThreshold: z.number().min(0).max(100).default(24.5),
+    footballTotalPointsThreshold: z.number().min(0).max(150).default(48.5),
+    basketballRutgersPointsThreshold: z
+      .number()
+      .min(0)
+      .max(150)
+      .default(72.5),
+    basketballTotalPointsThreshold: z
+      .number()
+      .min(0)
+      .max(300)
+      .default(145.5),
     sourceVerifiedLive: z.boolean().default(false),
     sourceSystem: z.string().default("rubus"),
     enterMeters: z.number().positive().default(50),

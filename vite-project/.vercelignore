@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules
+dist
+tiger/*credentials*
+**/*.pem
+**/*.key
+**/*secret*

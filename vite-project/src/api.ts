@@ -21,7 +21,8 @@ export async function request<T>(
       ? (await supabase.auth.getSession()).data.session
       : null,
     token = session?.access_token ?? sessionStorage.getItem("demo-token");
-  const r = await fetch(`/api${path}`, {
+  const apiOrigin = (import.meta.env.VITE_API_ORIGIN ?? "").replace(/\/$/, "");
+  const r = await fetch(`${apiOrigin}/api${path}`, {
     method: method ?? (body ? "POST" : "GET"),
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),

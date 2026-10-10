@@ -935,6 +935,24 @@ dd {
   line-height: 1.7;
   margin: 16px 0 25px;
 }
+.auth-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 22px 0 28px;
+  background: #f1ece4;
+}
+.auth-mode button {
+  padding: 9px 8px;
+  color: #8d7962;
+  font-size: 11px;
+}
+.auth-mode button.active {
+  background: #fffdf9;
+  color: #3a3027;
+  box-shadow: 0 1px 4px #4e2f1c14;
+}
 .login-dialog label {
   font-size: 11px;
   color: #947d60;
@@ -1354,4 +1372,315 @@ dd {
   color: #857563;
   padding: 8px 0;
   border-bottom: 1px solid #eee7df;
+}
+
+/* Scarlet market visual system: quiet neutrals, compact market rows, Rutgers red. */
+:root {
+  --scarlet: #c8102e;
+  --scarlet-dark: #9f0b24;
+  --ink: #171717;
+  --muted: #707070;
+  --line: #e6e6e6;
+  --surface: #ffffff;
+  --canvas: #f7f7f6;
+  background: var(--canvas);
+  color: var(--ink);
+}
+body {
+  background: var(--canvas);
+}
+header {
+  height: 72px;
+  padding-inline: 32px;
+  background: var(--surface);
+  border-bottom-color: var(--line);
+}
+.brand {
+  min-width: 190px;
+  font-size: 21px;
+  letter-spacing: -1px;
+  color: var(--ink);
+}
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--scarlet);
+  font-size: 29px;
+  line-height: 25px;
+  padding-left: 6px;
+}
+.brand-mark span {
+  font-size: 19px;
+  top: 1px;
+  right: -2px;
+}
+.brand-sub {
+  display: inline;
+  margin-left: 8px;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  color: var(--scarlet);
+}
+nav {
+  gap: 24px;
+}
+nav button {
+  color: #777;
+  font-size: 12px;
+}
+nav .nav-active {
+  color: var(--ink);
+}
+nav .nav-active:after {
+  background: var(--scarlet);
+}
+.cash {
+  color: var(--ink);
+  font-size: 12px;
+}
+.solid {
+  background: var(--scarlet);
+  border-radius: 6px;
+  padding: 11px 15px;
+}
+.solid:hover {
+  background: var(--scarlet-dark);
+}
+.environment-bar {
+  height: 36px;
+  padding-inline: 32px;
+  background: #f0f0ef;
+  color: #666;
+}
+.dot {
+  background: var(--scarlet);
+}
+main {
+  max-width: 1240px;
+  padding-inline: 32px;
+}
+.page-heading {
+  padding: 48px 0 28px;
+}
+.eyebrow {
+  color: var(--scarlet);
+  font-size: 9px;
+  letter-spacing: 1.3px;
+}
+h1 {
+  font-size: 40px;
+  font-weight: 650;
+  letter-spacing: -1.8px;
+  color: var(--ink);
+}
+.headline-row p {
+  color: #777;
+}
+.category-tabs {
+  gap: 22px;
+  border-bottom-color: var(--line);
+}
+.category-tabs button {
+  color: #777;
+  padding-block: 11px 14px;
+}
+.category-tabs .active {
+  color: var(--scarlet);
+  border-bottom-color: var(--scarlet);
+}
+.search-row {
+  padding-block: 17px 20px;
+}
+select {
+  border-color: #d9d9d9;
+  background: var(--surface);
+  border-radius: 6px;
+}
+.market-list-head {
+  grid-template-columns: minmax(0, 1fr) 190px 130px 28px;
+  padding-bottom: 12px;
+  border-bottom-color: var(--line);
+  color: #8a8a8a;
+}
+.market-row {
+  grid-template-columns: minmax(0, 1fr) 190px 130px 28px;
+  padding: 19px 14px;
+  margin-inline: -14px;
+  border-bottom-color: var(--line);
+  border-radius: 8px;
+}
+.market-row:hover {
+  background: var(--surface);
+  box-shadow: 0 2px 12px #1111110d;
+}
+.market-name {
+  gap: 14px;
+}
+.market-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #fcebed;
+  color: var(--scarlet);
+}
+.market-row:nth-child(3n + 2) .market-icon,
+.market-row:nth-child(3n) .market-icon {
+  background: #fcebed;
+  color: var(--scarlet);
+}
+.market-meta {
+  color: #8a8a8a;
+}
+.market-name h2 {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.market-name p,
+.market-volume small {
+  color: #929292;
+}
+.probability strong {
+  color: var(--ink);
+  font-size: 25px;
+  font-weight: 650;
+}
+.probability strong span {
+  color: #999;
+}
+.probability-no {
+  display: block;
+  margin-top: 3px;
+  color: #777;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.probability-track {
+  background: #ededed;
+  height: 4px;
+  margin-top: 7px;
+}
+.probability-track i {
+  background: var(--scarlet);
+}
+.probability small {
+  display: block;
+  margin-top: 6px;
+  color: #8b8b8b;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.market-volume {
+  color: #444;
+}
+.row-arrow {
+  color: #999;
+}
+.market-row:hover .row-arrow {
+  color: var(--scarlet);
+}
+.explainer {
+  margin-top: 32px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 24px 26px;
+}
+.large-star {
+  color: var(--scarlet);
+}
+.explainer h2 {
+  font-weight: 650;
+}
+.explainer p,
+.explainer-note {
+  color: #777;
+}
+.detail-heading {
+  border-bottom-color: var(--line);
+}
+.quote-head > strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+.quote-head > div,
+.quote-head small {
+  color: #777;
+}
+.trade-ticket {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px #1111110a;
+}
+.section-label {
+  color: var(--scarlet);
+  font-weight: 650;
+}
+.side-picker button {
+  background: #f3f3f3;
+  border-radius: 6px;
+}
+.side-picker button.selected {
+  border-color: var(--scarlet);
+  background: #fcebed;
+  color: var(--scarlet);
+}
+.quantity-label,
+.trade-summary dt,
+.trade-fineprint {
+  color: #777;
+}
+.quantity-label input {
+  background: #fafafa;
+  border-color: #d9d9d9;
+  border-radius: 6px;
+  color: var(--ink);
+}
+.quantity-presets button {
+  background: #f1f1f1;
+  border-radius: 5px;
+}
+.trade-summary dd,
+.return-multiple {
+  color: var(--ink);
+  font-weight: 600;
+}
+.buy-button {
+  background: var(--scarlet);
+}
+.receipt,
+.admin-section pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.alert {
+  background: #fcebed;
+  color: var(--scarlet);
+}
+.notice {
+  background: #f2f2f2;
+  color: #555;
+}
+@media (max-width: 720px) {
+  header {
+    padding-inline: 18px;
+  }
+  .environment-bar {
+    padding-inline: 18px;
+  }
+  .market-list-head,
+  .market-row {
+    grid-template-columns: minmax(0, 1fr) 70px;
+  }
+  .market-row {
+    margin-inline: -6px;
+    padding-inline: 6px;
+  }
+  .probability small,
+  .probability-no {
+    font-size: 8px;
+  }
 }

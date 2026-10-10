@@ -23,6 +23,21 @@ export const titles = [
   "Will candidate Scarlet win the demo election?",
   "Will Rutgers win the simulated football game?",
 ];
+
+// The demo is deterministic for replay, but the order flow is intentionally
+// noisy. Each market has a different seeded sentiment so the screen shows a
+// useful spread of probabilities instead of six markets hovering at 50%.
+function random01(seed: number, tick: number, salt: number) {
+  let value =
+    (Math.imul(seed ^ salt, 1664525) + 1013904223 + Math.imul(tick, 374761393)) >>>
+    0;
+  value ^= value >>> 13;
+  value = Math.imul(value, 1274126177) >>> 0;
+  value ^= value >>> 16;
+  return (value >>> 0) / 4294967296;
+}
+
+const demoSentiment = [0.82, 0.68, 0.28, 0.63, 0.2, 0.76];
 export async function newDemo(
   seed = 2026,
   key = `demo-${randomUUID().slice(0, 8)}`,
@@ -203,36 +218,54 @@ export async function demoStep(environmentId: string, seconds = 1) {
   const elapsed = Math.floor(
       (+env.virtualNow! - +env.simulatedStartAt!) / 1000,
     ),
+    previousElapsed = Math.max(0, elapsed - seconds * env.speed),
     markets = await db.market.findMany({
       where: { environmentId, generatorKey: null },
       orderBy: { slug: "asc" },
     });
-  if (elapsed < 120) {
+  if (elapsed < 150) {
     const bots = await db.profile.findMany({
       where: { kind: "BOT", wallets: { some: { environmentId } } },
       orderBy: { handle: "asc" },
     });
-    const v = (elapsed * 1103515245 + (env.seed ?? 0)) >>> 0;
-    const m = markets[v % markets.length],
-      actor = bots[(v >>> 3) % bots.length];
-    await buy(
-      { profileId: actor.id, role: "RUNNER", environmentId },
-      {
-        environmentId,
-        marketId: m.id,
-        side: (v >>> 7) % 2 ? "YES" : "NO",
-        quantity: 1 + ((v >>> 10) % 8),
-        maxCostMicros: "100000000",
-        idempotencyKey: `demo-bot:${elapsed}`,
-      },
-    ).catch((e) => {
-      if (!["MARKET_CLOSED", "INSUFFICIENT_FUNDS"].includes(e.code)) throw e;
-    });
-  } else if (elapsed < 150) {
+    // Generate one accepted-order attempt for every virtual second crossed.
+    // This keeps 10× playback visually active instead of producing only one
+    // trade per real worker tick.
+    const firstTradeTick = Math.max(1, previousElapsed + 1);
+    const lastTradeTick = Math.min(elapsed, 119);
+    for (let tick = firstTradeTick; tick <= lastTradeTick; tick++) {
+      const marketIndex = Math.floor(
+          random01(env.seed ?? 0, tick, 11) * markets.length,
+        ),
+        m = markets[marketIndex],
+        actor = bots[
+          Math.floor(random01(env.seed ?? 0, tick, 23) * bots.length)
+        ],
+        yesChance = demoSentiment[marketIndex] ?? 0.5,
+        side =
+          random01(env.seed ?? 0, tick, 37) < yesChance ? ("YES" as const) : ("NO" as const),
+        quantity = 1 + Math.floor(random01(env.seed ?? 0, tick, 41) * 12);
+      await buy(
+        { profileId: actor.id, role: "RUNNER", environmentId },
+        {
+          environmentId,
+          marketId: m.id,
+          side,
+          quantity,
+          maxCostMicros: "100000000",
+          idempotencyKey: `demo-bot:${tick}`,
+        },
+      ).catch((e) => {
+        if (!["MARKET_CLOSED", "INSUFFICIENT_FUNDS"].includes(e.code)) throw e;
+      });
+    }
+    if (elapsed >= 120) {
     for (const m of markets)
       if (["OPEN", "PAUSED"].includes(m.status))
         await lifecycle(m.id, "CLOSED");
-  } else {
+    }
+  }
+  if (elapsed >= 150) {
     for (const m of markets)
       if (!["RESOLVED", "VOIDED"].includes(m.status))
         await settle(m.id, fixture(m, env.virtualNow!));

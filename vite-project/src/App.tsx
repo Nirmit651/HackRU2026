@@ -52,6 +52,13 @@ const icons = {
   STUDENT_ELECTION: Vote,
   VARSITY_SPORTS: Flag,
 };
+const percent = (price: string | number) => Number(price) * 100;
+const payoutMultiple = (price: string | number) => {
+  const value = Number(price);
+  return value > 0 ? 1 / value : 0;
+};
+const multipleLabel = (price: string | number) =>
+  `${payoutMultiple(price).toFixed(2)}×`;
 type Me = { displayName: string; admin: boolean; campus: string };
 type Position = {
   id: string;
@@ -88,6 +95,8 @@ export default function App() {
     [error, setError] = useState(""),
     [login, setLogin] = useState(false),
     [loginName, setLoginName] = useState(""),
+    [loginPassword, setLoginPassword] = useState(""),
+    [authMode, setAuthMode] = useState<"signin" | "signup">("signup"),
     [notice, setNotice] = useState(""),
     [refresh, setRefresh] = useState(0);
   const env = envs.find((e) => e.id === environmentId);
@@ -172,12 +181,27 @@ export default function App() {
         setMe(await request<Me>("/me"));
         setLogin(false);
       } else if (supabase) {
-        const { error } = await supabase.auth.signInWithOtp({
-          email: loginName,
-          options: { emailRedirectTo: window.location.origin },
-        });
-        if (error) throw error;
-        setNotice("Check your email for the sign-in link.");
+        const email = loginName.trim();
+        const result =
+          authMode === "signup"
+            ? await supabase.auth.signUp({
+                email,
+                password: loginPassword,
+              })
+            : await supabase.auth.signInWithPassword({
+                email,
+                password: loginPassword,
+              });
+        if (result.error) throw result.error;
+        if (!result.data.session) {
+          setNotice(
+            "Account created. Check your email only if Supabase email confirmation is still enabled.",
+          );
+          setLogin(false);
+          return;
+        }
+        setMe(await request<Me>("/me"));
+        setLoginPassword("");
         setLogin(false);
       } else setError("Supabase Auth is not configured.");
     } catch (e) {
@@ -193,12 +217,12 @@ export default function App() {
   return (
     <div className="app-shell">
       <header>
-        <a className="brand" href="/" aria-label="Scarlet Exchange home">
+        <a className="brand" href="/" aria-label="Scarlet market home">
           <span className="brand-mark">
             s<span>↗</span>
           </span>
           <span>
-            scarlet<span className="brand-sub">EXCHANGE</span>
+            scarlet<span className="brand-sub">MARKET</span>
           </span>
         </a>
         <nav>
@@ -290,13 +314,13 @@ export default function App() {
         {view === "markets" && !selected && (
           <>
             <div className="page-heading">
-              <div className="eyebrow">THE CAMPUS CONSENSUS</div>
+              <div className="eyebrow">RUTGERS PREDICTION MARKETS</div>
               <div className="headline-row">
-                <h1>What happens next?</h1>
+                <h1>Trade on what happens next.</h1>
                 <p>
-                  A stake in the everyday.
+                  Campus questions.
                   <br />
-                  Trade your take on Rutgers.
+                  Clear odds. Play money.
                 </p>
               </div>
             </div>
@@ -377,12 +401,18 @@ export default function App() {
                     </div>
                     <div className="probability">
                       <strong>
-                        {(Number(m.yesPrice) * 100).toFixed(0)}
+                        {percent(m.yesPrice).toFixed(0)}
                         <span>%</span>
                       </strong>
+                      <span className="probability-no">
+                        NO {(100 - percent(m.yesPrice)).toFixed(0)}%
+                      </span>
                       <div className="probability-track">
-                        <i style={{ width: `${Number(m.yesPrice) * 100}%` }} />
+                        <i style={{ width: `${percent(m.yesPrice)}%` }} />
                       </div>
+                      <small>
+                        {multipleLabel(m.yesPrice)} YES · {multipleLabel(1 - Number(m.yesPrice))} NO
+                      </small>
                     </div>
                     <div className="market-volume">
                       {dollars(m.volumeMicros)}
@@ -413,7 +443,7 @@ export default function App() {
             <section className="explainer">
               <span className="large-star">✳</span>
               <div>
-                <h2>Your campus. Your call.</h2>
+                <h2>Make your call.</h2>
                 <p>
                   Start with $R 1,000. Buy YES or NO. Each winning share pays $R
                   1.
@@ -578,12 +608,12 @@ export default function App() {
       </main>
       <footer>
         <span>
-          scarlet exchange <span>© 2026</span>
+          scarlet market <span>© 2026</span>
         </span>
         <span>
           Play money only · No cash-out · Not affiliated with Rutgers University
         </span>
-        <span>Made for the banks.</span>
+        <span>Built at HackRU.</span>
       </footer>
       {login && (
         <div className="modal-backdrop" onClick={() => setLogin(false)}>
@@ -596,15 +626,35 @@ export default function App() {
             }}
           >
             <div className="eyebrow">WELCOME TO SCARLET</div>
+            {!config?.localDemoAuth && (
+              <div className="auth-mode" role="tablist" aria-label="Account mode">
+                <button
+                  type="button"
+                  className={authMode === "signup" ? "active" : ""}
+                  onClick={() => setAuthMode("signup")}
+                >
+                  Create account
+                </button>
+                <button
+                  type="button"
+                  className={authMode === "signin" ? "active" : ""}
+                  onClick={() => setAuthMode("signin")}
+                >
+                  Sign in
+                </button>
+              </div>
+            )}
             <h2>
               {config?.localDemoAuth
                 ? "Enter the local demo"
-                : "Sign in to trade"}
+                : authMode === "signup"
+                  ? "Create your account"
+                  : "Sign in to trade"}
             </h2>
             <p>
               {config?.localDemoAuth
                 ? "A separate demo wallet starts with $R 1,000."
-                : "We’ll send a sign-in link to your email."}
+                : "Use your email and a password. No magic-link email is required."}
             </p>
             <label>
               {config?.localDemoAuth ? "Display name" : "Email"}
@@ -617,8 +667,25 @@ export default function App() {
                 maxLength={100}
               />
             </label>
+            {!config?.localDemoAuth && (
+              <label>
+                Password
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                />
+              </label>
+            )}
             <button className="solid" type="submit">
-              Continue <ArrowRight size={16} />
+              {config?.localDemoAuth
+                ? "Continue"
+                : authMode === "signup"
+                  ? "Create account"
+                  : "Sign in"} <ArrowRight size={16} />
             </button>
             <button
               type="button"
@@ -782,9 +849,15 @@ function TradeTicket({
           Maximum cost <small>(2% buffer)</small>
         </dt>
         <dd>{quote ? dollars(max, 6) : "—"}</dd>
-        <dt>If {side} wins</dt>
+        <dt>Potential payout</dt>
         <dd>{quote ? dollars(quote.winningPayoutMicros) : "—"}</dd>
-        <dt>Estimated net profit</dt>
+        <dt>Return multiple</dt>
+        <dd className="return-multiple">
+          {quote
+            ? `${(Number(quote.winningPayoutMicros) / Number(quote.costMicros)).toFixed(2)}×`
+            : "—"}
+        </dd>
+        <dt>Estimated profit</dt>
         <dd>{quote ? dollars(quote.netProfitMicros) : "—"}</dd>
       </dl>
       <button

@@ -6,7 +6,7 @@ import {
   emptyVisit,
   type Telemetry,
 } from "../server/automation/bus-state";
-import { normalizeGame } from "../server/automation/providers";
+import { normalizeEspnGame, normalizeGame } from "../server/automation/providers";
 import { sportsResult, seasons } from "../server/automation/sports";
 const s = settingsSchema.parse({
   stops: [
@@ -170,5 +170,34 @@ describe("documented sports schemas", () => {
     expect(seasons("basketball", new Date("2027-02-01T12:00:00Z"))[1]).toBe(
       2027,
     );
+  });
+  it("normalizes the public ESPN event shape", () => {
+    const g = normalizeEspnGame({
+      id: "401000001",
+      date: "2026-10-17T16:00:00Z",
+      season: { year: 2026 },
+      competitions: [
+        {
+          competitors: [
+            {
+              homeAway: "home",
+              team: { id: "164", displayName: "Rutgers Scarlet Knights" },
+              score: "31",
+            },
+            {
+              homeAway: "away",
+              team: { id: "1208", displayName: "Maryland Terrapins" },
+              score: "24",
+            },
+          ],
+          status: { type: { state: "post", completed: true, name: "STATUS_FINAL" } },
+        },
+      ],
+    });
+    expect(g.homeId).toBe(164);
+    expect(g.awayPoints).toBe(24);
+    expect(g.status).toBe("final");
+    expect(sportsResult(g, 164, "team-points", 24.5)).toBe(true);
+    expect(sportsResult(g, 164, "total-points", 55.5)).toBe(false);
   });
 });
