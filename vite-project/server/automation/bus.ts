@@ -344,7 +344,7 @@ export async function monitorBus(m: Market) {
   }
   return add(at, 10);
 }
-async function monitorScheduledBus(m: Market, settings: Record<string, unknown>, at: Date) {
+export async function monitorScheduledBus(m: Market, settings: Record<string, unknown>, at: Date) {
   const kind = settings.kind as "arrival_by_deadline" | "presence_at_time";
   const stop = settings.stop as { latitude: number; longitude: number };
   const decision = new Date(String(kind === "arrival_by_deadline" ? settings.deadline : settings.targetTime));
@@ -373,8 +373,7 @@ async function monitorScheduledBus(m: Market, settings: Record<string, unknown>,
     await finish(m, { units: "boolean", result: result.result }, { algorithm: settings.algorithm, observation: result.observation, reason: result.reason, frozen: settings }, new Date(result.observation.sourceAt));
     return;
   }
-  const windowEnded = kind === "presence_at_time" && at >= add(decision, DECISION_WINDOW_SECONDS);
-  if ((result && "void" in result) || windowEnded || at >= new Date(String(settings.voidAfter))) {
+  if (at >= new Date(String(settings.voidAfter))) {
     await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason: result && "void" in result ? result.void : "INSUFFICIENT_QUALIFYING_SOURCE_EVIDENCE", frozen: settings }, at);
     return;
   }
