@@ -75,6 +75,16 @@ describe("PostgreSQL financial invariants", () => {
       buy(actor(), { ...input, quantity: 11 }),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
   });
+  it("allows adding to the held side but not opening the opposite side", async () => {
+    const e = await newDemo(),
+      m = await db.market.findFirstOrThrow({ where: { environmentId: e.id, category: "TEMPERATURE" } });
+    await grantWallet(profile.id, e.id);
+    await buy(actor(), { ...order(), environmentId: e.id, marketId: m.id, side: "YES" });
+    await expect(buy(actor(), { ...order(), environmentId: e.id, marketId: m.id, side: "YES" }))
+      .resolves.toMatchObject({ trade: { side: "YES", action: "BUY" } });
+    await expect(buy(actor(), { ...order(), environmentId: e.id, marketId: m.id, side: "NO" }))
+      .rejects.toMatchObject({ code: "OPPOSITE_POSITION" });
+  });
   it("serializes simultaneous spending without negative balances", async () => {
     const results = await Promise.allSettled(
       Array.from({ length: 20 }, () => buy(actor(), order(randomUUID(), 200))),

@@ -205,6 +205,16 @@ export async function buy(actor: Actor, raw: BuyInput) {
       "MARKET_CLOSED",
       409,
     );
+    const existingPosition = await tx.position.findUnique({
+      where: { marketId_walletId: { marketId: market.id, walletId: wallet.id } },
+    });
+    ensure(
+      input.side === "YES"
+        ? (existingPosition?.noShares ?? 0n) === 0n
+        : (existingPosition?.yesShares ?? 0n) === 0n,
+      "OPPOSITE_POSITION",
+      409,
+    );
     const quote = execution(
       market.yesShares,
       market.noShares,

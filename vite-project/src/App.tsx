@@ -69,6 +69,7 @@ function friendlyTradeError(error: unknown) {
   if (/closed|not open/.test(message)) return "Market closed.";
   if (/price|version|slippage/.test(message)) return "Price changed. Review the updated quote and try again.";
   if (/insufficient|balance|fund/.test(message)) return "Insufficient funds.";
+  if (/opposite|position/.test(message)) return "Sell your existing side before buying the opposite side.";
   if (/quantity|share/.test(message)) return "Enter a valid number of shares.";
   if (/auth|sign in|unauthor/.test(message)) return "Authentication required. Sign in to trade.";
   if (/network|fetch|timeout/.test(message)) return "Network unavailable. Check your connection and try again.";
@@ -669,6 +670,7 @@ function TradeTicket({
 }) {
   const [side, setSide] = useState<"YES" | "NO">(initialSide),
     [action, setAction] = useState<"BUY" | "SELL">("BUY"),
+    [position, setPosition] = useState<Position | null>(null),
     [quantityText, setQuantityText] = useState(""),
     [quote, setQuote] = useState<{
       costMicros?: string;
@@ -696,7 +698,10 @@ function TradeTicket({
     } | null>(null),
     quantity = quantityText ? Number(quantityText) : 0;
   const now = env?.kind === "DEMO" ? Date.parse(env.virtualNow!) : Date.now(),
-    closed = market.status !== "OPEN" || now >= Date.parse(market.closesAt);
+    closed = market.status !== "OPEN" || now >= Date.parse(market.closesAt),
+    selectedShares = BigInt(
+      side === "YES" ? position?.yesShares ?? "0" : position?.noShares ?? "0",
+    );
   useEffect(() => {
     setSide(initialSide);
     setTradeError("");
@@ -707,6 +712,18 @@ function TradeTicket({
     setQuoteError("");
     setQuantityText("");
   }, [market.id]);
+  useEffect(() => {
+    let active = true;
+    if (!signedIn) { setPosition(null); return; }
+    request<{ positions: Position[] }>(`/me/positions?environmentId=${market.environmentId}`)
+      .then((r) => { if (active) setPosition(r.positions.find((p) => p.market.id === market.id) ?? null); })
+      .catch(() => { if (active) setPosition(null); });
+    return () => { active = false; };
+  }, [market.id, market.environmentId, signedIn]);
+  useEffect(() => {
+    setTradeError("");
+    setQuoteError("");
+  }, [action, side, position?.yesShares, position?.noShares]);
   useEffect(() => {
     let active = true;
     if (!closed && quantity > 0)
@@ -747,7 +764,7 @@ function TradeTicket({
       onLogin();
       return;
     }
-    if (quantity < 1 || !quoteIsCurrent) return;
+    if (quantity < 1 || !quoteIsCurrent || (action === "SELL" && selectedShares === 0n)) return;
     setBusy(true);
     setTradeError("");
     const attempt =
@@ -776,7 +793,21 @@ function TradeTicket({
         idempotencyKey: attempt.key,
       });
       setPending(null);
+      setTradeError("");
+      setQuantityText("");
       onTrade();
+      // This refresh is informational. A transient failure after a completed
+      // trade must never be reported as an order failure.
+      void request<{ positions: Position[] }>(
+        `/me/positions?environmentId=${market.environmentId}`,
+      )
+        .then((holdings) => {
+          const nextPosition = holdings.positions.find((p) => p.market.id === market.id) ?? null;
+          setPosition(nextPosition);
+          if (action === "SELL" && BigInt(nextPosition?.yesShares ?? "0") === 0n && BigInt(nextPosition?.noShares ?? "0") === 0n)
+            setAction("BUY");
+        })
+        .catch(() => {});
     } catch (e) {
       setTradeError(friendlyTradeError(e));
     } finally {
@@ -800,6 +831,10 @@ function TradeTicket({
           <button
             key={s}
             className={side === s ? "selected" : ""}
+            disabled={
+              (action === "BUY" && BigInt(s === "YES" ? position?.noShares ?? "0" : position?.yesShares ?? "0") !== 0n) ||
+              (action === "SELL" && signedIn && BigInt(s === "YES" ? position?.yesShares ?? "0" : position?.noShares ?? "0") === 0n)
+            }
             onClick={() => setSide(s)}
           >
             {s}{" "}
@@ -869,7 +904,7 @@ function TradeTicket({
       </dl>
       <button
         className="solid buy-button"
-        disabled={busy || closed || quantity < 1 || (!quoteIsCurrent && signedIn)}
+        disabled={busy || closed || quantity < 1 || (action === "SELL" && selectedShares === 0n) || (!quoteIsCurrent && signedIn)}
         onClick={submit}
       >
         {busy
@@ -877,7 +912,9 @@ function TradeTicket({
           : closed
             ? "Trading closed"
             : signedIn
-              ? quantity > 0
+              ? action === "SELL" && selectedShares === 0n
+                ? "No sellable shares"
+                : quantity > 0
                 ? `${action === "BUY" ? "Buy" : "Sell"} ${quantity} ${side} shares`
                 : "Enter number of shares"
               : `Sign in to ${action === "BUY" ? "buy" : "sell"}`}
@@ -1382,14 +1419,26 @@ function MarketHolding({
   }, [market.id, market.environmentId, refresh]);
   return (
     <section className="holding">
-      <h2>Your holdings</h2>
-      <p>
-        {failed
-          ? "Holdings temporarily unavailable."
-          : position
-            ? `${position.yesShares} YES · ${position.noShares} NO · Purchase cost ${dollars(position.totalCostMicros)}`
-            : "You have no shares in this market yet."}
-      </p>
+      <div className="holding-heading">
+        <h2>Your holdings</h2>
+        <span>POSITION</span>
+      </div>
+      {failed ? (
+        <p className="holding-empty">Holdings temporarily unavailable.</p>
+      ) : position ? (
+        <div className="holding-details">
+          <div className="holding-sides">
+            <span><strong>{position.yesShares}</strong> YES</span>
+            <span><strong>{position.noShares}</strong> NO</span>
+          </div>
+          <div className="holding-cost">
+            <span>Purchase cost</span>
+            <strong>{dollars(position.totalCostMicros)}</strong>
+          </div>
+        </div>
+      ) : (
+        <p className="holding-empty">You have no shares in this market yet.</p>
+      )}
     </section>
   );
 }
