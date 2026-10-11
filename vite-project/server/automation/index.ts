@@ -268,6 +268,15 @@ export async function automationTick() {
   await reconcileAutomation(undefined, true);
   for (let i = 0; i < 10; i++) if (!(await executeOne(handleJob))) break;
 }
+async function archiveTerminalBusCycle(market: Awaited<ReturnType<typeof db.market.findUniqueOrThrow>>) {
+  const settlement = await db.settlement.findUnique({ where: { marketId: market.id }, select: { outcome: true } });
+  await db.marketArchive.upsert({
+    where: { marketId: market.id },
+    create: { marketId: market.id, reason: settlement ? `settled_bus_break_${settlement.outcome.toLowerCase()}` : "terminal_bus_break" },
+    update: {},
+  });
+  await ensureNextCollegeAveBreakMarket(market.environmentId);
+}
 /**
  * Serverless fallback for the existing five-second frozen-bus map request.
  * It advances only that market; it never selects a replacement vehicle. A
@@ -276,13 +285,16 @@ export async function automationTick() {
  */
 export async function tickLiveBusMarket(marketId: string) {
   const market = await db.market.findUniqueOrThrow({ where: { id: marketId } });
-  if (market.category !== "BUS_ARRIVAL" || ["RESOLVED", "VOIDED"].includes(market.status)) return market;
+  if (market.category !== "BUS_ARRIVAL") return market;
   const automation = ruleSchema.parse(market.resolutionRule).automation;
   if (automation?.type !== "bus" || automation.settings.kind !== "next_bus_break") return market;
+  if (["RESOLVED", "VOIDED"].includes(market.status)) {
+    await archiveTerminalBusCycle(market);
+    return market;
+  }
   await monitorBus(market);
   const updated = await db.market.findUniqueOrThrow({ where: { id: marketId } });
-  if (["RESOLVED", "VOIDED"].includes(updated.status))
-    await ensureNextCollegeAveBreakMarket(updated.environmentId);
+  if (["RESOLVED", "VOIDED"].includes(updated.status)) await archiveTerminalBusCycle(updated);
   return updated;
 }
 export async function automationStatus(environmentId: string) {
