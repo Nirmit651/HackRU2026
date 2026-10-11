@@ -91,10 +91,10 @@ export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: {
   }, [ready, snapshot, selectedRoute]);
 
   return <section className="bus-panel" aria-label={`Route ${routeId} map`}>
-    <div className="bus-panel-heading"><div><span className="section-label">Route {routeId} · {stopName}</span><h2>Bus route</h2></div><div className="bus-status">{failed ? "Live feed unavailable" : snapshot?.isSimulated ? "SIMULATED · recorded scenario" : snapshot && Date.now() - Date.parse(snapshot.observedAt) > 30000 ? "Stale vehicle data" : "Live vehicle data"}</div></div>
+    <div className="bus-panel-heading"><div><span className="section-label">Route {routeId} · {stopName}</span><h2>Bus route</h2></div><div className="bus-status">{failed ? "Live feed unavailable" : snapshot?.isSimulated ? "SIMULATED · recorded scenario" : snapshot && snapshot.vehicles.length === 0 ? "Selected vehicle unavailable" : snapshot && Date.now() - Date.parse(snapshot.observedAt) > 30000 ? "Stale vehicle data" : "Live vehicle data"}</div></div>
     <p className="bus-panel-copy">{snapshot?.predictedArrival ? `Predicted arrival ${date(snapshot.predictedArrival)} · ` : ""}Follow the actual GTFS route shape to the target stop. Deadline {date(deadline)}.</p>
     {!!snapshot?.activeRoutes?.length && <div className="route-chips" aria-label="Active routes">{snapshot.activeRoutes.map((active) => <button key={active} className={selectedRoute === active ? "active" : ""} onClick={() => setSelectedRoute(selectedRoute === active ? undefined : active)}>{active}</button>)}</div>}
     {accessToken ? <div ref={host} className="map" /> : <div className="map-empty">Mapbox is not configured.</div>}
-    <small>{snapshot ? `${snapshot.source} · vehicles ${date(snapshot.vehicleFeedAt ?? snapshot.observedAt)} · predictions ${date(snapshot.tripFeedAt ?? snapshot.observedAt)}` : "No live arrival prediction is available."}</small>
+    <small>{snapshot ? snapshot.vehicles.length ? `${snapshot.source} · vehicles ${date(snapshot.vehicleFeedAt ?? snapshot.observedAt)} · predictions ${date(snapshot.tripFeedAt ?? snapshot.observedAt)}` : "The frozen vehicle is not currently present in the live feed; no replacement bus is shown." : "No live arrival prediction is available."}</small>
   </section>;
 }

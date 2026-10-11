@@ -221,9 +221,16 @@ export default function App() {
   }, [me, refreshAccount]);
   useEffect(() => {
     if (!environmentId) return;
-    const timer = setInterval(refreshAccount, 5000);
+    // Wallet polling must not also refresh the market list/detail. BusMap owns
+    // its own location-only polling cadence.
+    const timer = setInterval(() => {
+      if (me)
+        void request<{ balanceMicros: string }>(`/me/wallet?environmentId=${environmentId}`)
+          .then((w) => setBalance(w.balanceMicros))
+          .catch(() => {});
+    }, 5000);
     return () => clearInterval(timer);
-  }, [environmentId, refreshAccount]);
+  }, [environmentId, me]);
   useEffect(() => {
     if (!selected) return;
     let stopped = false;

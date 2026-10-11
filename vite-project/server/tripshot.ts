@@ -16,6 +16,7 @@ export type LiveVehicle = { id: string; routeId: string; tripId?: string; latitu
 export type Arrival = { tripId: string; routeId: string; vehicleId?: string; arrivalAt: string; feedTimestamp: string; stopId: string };
 type StaticGtfs = { stops: Stop[]; routes: Map<string, Route>; trips: Map<string, Trip>; stopTimes: Map<string, { stopId: string; sequence: number }[]>; shapes: Map<string, [number, number][]>; collegeStops: Stop[] };
 export type LiveTransit = { vehicles: LiveVehicle[]; routes: Route[]; targetStops: Stop[]; nextArrival: Arrival | null; routeGeometry: [number, number][]; observedAt: string; tripFeedAt: string; vehicleFeedAt: string; stale: boolean };
+export type FrozenTripSnapshot = Pick<LiveTransit, "observedAt" | "tripFeedAt" | "vehicleFeedAt" | "stale"> & { vehicle: LiveVehicle | null; routeGeometry: [number, number][] };
 
 let staticCache: { value: StaticGtfs; at: number } | undefined;
 let refreshStatic: Promise<StaticGtfs> | undefined;
@@ -87,3 +88,18 @@ async function live(): Promise<LiveTransit> {
   return refreshRealtime;
 }
 export const tripshotLive = live;
+
+/** Reads the shared live cache but renders only the vehicle/trip frozen into a market. */
+export async function tripshotFrozenTrip(tripId: string, vehicleId: string): Promise<FrozenTripSnapshot> {
+  const [value, gtfs] = await Promise.all([live(), staticGtfs()]);
+  const vehicle = value.vehicles.find((candidate) => candidate.id === vehicleId || candidate.tripId === tripId) ?? null;
+  const trip = gtfs.trips.get(tripId);
+  return {
+    vehicle,
+    routeGeometry: trip?.shapeId ? gtfs.shapes.get(trip.shapeId) ?? [] : [],
+    observedAt: value.observedAt,
+    tripFeedAt: value.tripFeedAt,
+    vehicleFeedAt: value.vehicleFeedAt,
+    stale: value.stale,
+  };
+}

@@ -3,7 +3,7 @@ import type { BusSnapshot } from "../shared/contracts";
 import { db, ensure } from "./db";
 import { ruleSchema } from "../shared/contracts";
 import type { Visit } from "./automation/bus-state";
-import { tripshotLive } from "./tripshot";
+import { tripshotFrozenTrip } from "./tripshot";
 const coordinate = {
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -46,26 +46,27 @@ export async function busSnapshot(
     const settings = automation.settings;
     if (settings.sourceSystem === "tripshot") {
       try {
-        const live = await tripshotLive();
-        const tracked = live.nextArrival && (live.vehicles.find((vehicle) => vehicle.id === String(settings.vehicleId) || vehicle.tripId === String(settings.tripId)));
+        const live = await tripshotFrozenTrip(String(settings.tripId), String(settings.vehicleId));
         return {
           source: "TripShot GTFS + GTFS-Realtime",
           isSimulated: false,
           observedAt: live.observedAt,
           receivedAt: live.vehicleFeedAt,
-          vehicles: live.vehicles.map((vehicle) => ({ id: vehicle.id, routeId: vehicle.routeId, latitude: vehicle.latitude, longitude: vehicle.longitude, heading: vehicle.heading, updatedAt: vehicle.updatedAt })),
-          stops: live.targetStops,
+          vehicles: live.vehicle ? [{ id: live.vehicle.id, routeId: live.vehicle.routeId, latitude: live.vehicle.latitude, longitude: live.vehicle.longitude, heading: live.vehicle.heading, updatedAt: live.vehicle.updatedAt }] : [],
+          stops: [settings.stop as BusSnapshot["stops"][number]],
           routeGeometry: live.routeGeometry,
-          etaSeconds: live.nextArrival ? Math.max(0, Math.round((+new Date(live.nextArrival.arrivalAt) - Date.now()) / 1000)) : undefined,
-          activeRoutes: [...new Set(live.vehicles.map((vehicle) => vehicle.routeId))],
-          trackedVehicleId: tracked?.id ?? null,
-          selectedRouteId: live.nextArrival?.routeId ?? String(settings.routeId),
-          predictedArrival: live.nextArrival?.arrivalAt ?? null,
+          etaSeconds: settings.predictedArrival ? Math.max(0, Math.round((+new Date(String(settings.predictedArrival)) - Date.now()) / 1000)) : undefined,
+          activeRoutes: [String(settings.routeId)],
+          trackedVehicleId: live.vehicle?.id ?? null,
+          selectedRouteId: String(settings.routeId),
+          predictedArrival: String(settings.predictedArrival ?? "") || null,
           tripFeedAt: live.tripFeedAt,
           vehicleFeedAt: live.vehicleFeedAt,
           stale: live.stale,
         } as BusSnapshot;
-      } catch {
+      } catch (error) {
+        // Keep upstream details server-side, but make a null snapshot diagnosable.
+        console.warn("TripShot bus snapshot unavailable", error instanceof Error ? error.message : error);
         return null;
       }
     }
