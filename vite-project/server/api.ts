@@ -215,7 +215,12 @@ app.post("/api/bus/showcase", async (req, res) => {
 app.post("/api/presentation/:marketId/start", async (req, res) => { demoAdmin(req); res.json(await startPresentation(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/finish", async (req, res) => { demoAdmin(req); res.json(await finishPresentation(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/cleanup", async (req, res) => { demoAdmin(req); res.json(await cleanupPresentationDemo(id(req.params.marketId))); });
-app.post("/api/presentation/:marketId/whale", async (req, res) => { demoAdmin(req); const run = await presentationStatus(id(req.params.marketId)); res.json(await tickPresentationRun(run.id, true)); });
+app.post("/api/presentation/:marketId/whale", async (req, res) => {
+  demoAdmin(req);
+  const side = z.object({ side: z.enum(["YES", "NO"]) }).parse(req.body).side;
+  const run = await presentationStatus(id(req.params.marketId));
+  res.json(await tickPresentationRun(run.id, true, side));
+});
 app.post("/api/presentation/:marketId/bots", async (req, res) => {
   demoAdmin(req);
   const status = z.object({ status: z.enum(["RUNNING", "PAUSED", "STOPPED"]) }).parse(req.body).status;

@@ -7,6 +7,7 @@ import type { ProviderEvidence } from "../shared/contracts";
 
 const BOT_NAMES = ["ScarletFox", "KnightWatcher", "RaritanWhale", "CampusPulse", "RUQuant", "KnightShift", "RaritanBull", "ScarletSignal", "CollegeAveTrader", "BuschBull", "LivingstonLine", "JerseyMomentum"];
 const STRATEGIES = ["CASUAL", "CASUAL", "CASUAL", "CASUAL", "CASUAL", "CASUAL", "MOMENTUM", "MOMENTUM", "MOMENTUM", "CONTRARIAN", "CONTRARIAN", "WHALE"];
+export type WhaleTradeSide = "YES" | "NO";
 
 export function timerYesSignal(elapsedSeconds: number) {
   const t = Math.max(0, Math.min(60, elapsedSeconds));
@@ -161,7 +162,19 @@ function seeded(runId: string, tick: number, salt: number) {
   let n = salt; for (const c of runId) n = Math.imul(n ^ c.charCodeAt(0), 16777619); n = Math.imul(n ^ tick, 2246822519); return ((n >>> 0) % 10_000) / 10_000;
 }
 
-export async function tickPresentationRun(runId: string, forceWhale = false) {
+export function presentationBotSide(
+  signal: number,
+  elapsed: number,
+  random: number,
+  forceWhale: boolean,
+  strategy: string,
+  forcedWhaleSide?: WhaleTradeSide,
+): WhaleTradeSide {
+  if (forceWhale && strategy === "WHALE" && forcedWhaleSide) return forcedWhaleSide;
+  return elapsed >= 57 || random < signal ? "YES" : "NO";
+}
+
+export async function tickPresentationRun(runId: string, forceWhale = false, forcedWhaleSide?: WhaleTradeSide) {
   const run = await db.presentationDemoRun.findUniqueOrThrow({ where: { id: runId }, include: { market: true } });
   if (run.status !== "RUNNING" || !run.startedAt || !run.deadlineAt) return run;
   const at = now();
@@ -175,7 +188,7 @@ export async function tickPresentationRun(runId: string, forceWhale = false) {
     const market = await db.market.findUniqueOrThrow({ where: { id: run.marketId } });
     const position = await db.position.findFirst({ where: { marketId: run.marketId, wallet: { profileId: state.botProfileId } } });
     const heldSide = (position?.yesShares ?? 0n) > 0n ? "YES" : (position?.noShares ?? 0n) > 0n ? "NO" : null;
-    const desired = elapsed >= 57 || seeded(runId, tick, index + 99) < signal ? "YES" : "NO";
+    const desired = presentationBotSide(signal, elapsed, seeded(runId, tick, index + 99), forceWhale, state.strategy, forcedWhaleSide);
     const quantity = state.strategy === "WHALE" ? 30 + Math.floor(seeded(runId, tick, 333) * 41) : state.strategy === "MOMENTUM" ? 8 + Math.floor(seeded(runId, tick, 444) * 13) : state.strategy === "CONTRARIAN" ? 3 + Math.floor(seeded(runId, tick, 555) * 8) : 2 + Math.floor(seeded(runId, tick, 666) * 7);
     const key = `presentation:${runId}:${state.botProfileId}:${tick}`;
     const priorDecision = await db.simulationDecision.findUnique({ where: { runId_botProfileId_sequence: { runId, botProfileId: state.botProfileId, sequence: tick } } });

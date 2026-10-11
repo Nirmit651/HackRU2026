@@ -2106,6 +2106,11 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .presentation-stats { color: #6c6266; font-size: 13px; }
 .presentation-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
 .presentation-controls .danger { background: #9e102c; }
+.whale-trade-label { display: inline-flex; align-items: center; padding: 0 4px 0 8px; color: #6c6266; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.whale-trade-side { min-height: 38px; border: 0; border-radius: 8px; padding: 0 13px; color: #fff; font-size: 13px; font-weight: 800; cursor: pointer; transition: transform .16s ease, filter .16s ease; }
+.whale-trade-side:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.whale-yes { background: #2563eb; }
+.whale-no { background: #b78300; color: #251b00; }
 .presentation-cleanup { margin-top: 12px; color: #756c70; font-size: 12px; }
 .modal-backdrop { position: fixed !important; inset: 0 !important; z-index: 1000 !important; display: grid !important; place-items: center !important; padding: 20px; background: rgba(22, 14, 17, .62) !important; backdrop-filter: blur(7px) !important; }
 .auth-dialog { position: relative; width: min(430px, 100%); padding: 32px; border: 1px solid #ead7dc; border-radius: 16px; background: #fff; color: #171216; box-shadow: 0 30px 90px rgba(32, 13, 20, .3); }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { presentationEventId, presentationFundingKey, presentationOutcome, presentationRuleFor, timerYesSignal } from "../server/presentation";
+import { presentationBotSide, presentationEventId, presentationFundingKey, presentationOutcome, presentationRuleFor, timerYesSignal } from "../server/presentation";
 
 describe("presentation timer signal", () => {
   it("starts neutral and approaches certainty without forcing 100%", () => {
@@ -35,5 +35,12 @@ describe("presentation settlement rule", () => {
   it("uses a unique immutable funding key for every presentation run", () => {
     expect(presentationFundingKey("run-a")).toBe("fund:presentation:run-a");
     expect(presentationFundingKey("run-a")).not.toBe(presentationFundingKey("run-b"));
+  });
+});
+
+describe("forced whale trades", () => {
+  it("honors the admin-selected side instead of the timer signal", () => {
+    expect(presentationBotSide(.99, 58, .01, true, "WHALE", "NO")).toBe("NO");
+    expect(presentationBotSide(.01, 2, .99, true, "WHALE", "YES")).toBe("YES");
   });
 });
