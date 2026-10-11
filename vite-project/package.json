@@ -33,7 +33,9 @@
     "live:new": "tsx scripts/live.ts",
     "rutgers:setup": "tsx scripts/rutgers.ts",
     "tripshot:smoke": "tsx scripts/tripshot-smoke.ts",
-    "tripshot:cache": "tsx scripts/cache-tripshot-static.ts"
+    "tripshot:cache": "tsx scripts/cache-tripshot-static.ts",
+    "tripshot:import": "tsx scripts/import-tripshot-static.ts",
+    "tripshot:replace-legacy-market": "tsx scripts/replace-legacy-tripshot-market.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
