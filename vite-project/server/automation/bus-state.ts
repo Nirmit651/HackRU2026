@@ -149,9 +149,11 @@ export function advanceVisit(
       v.departureSamples++;
       v.departureAt ??= o.sourceAt;
       v.state = "DEPARTURE_CANDIDATE";
-      if (v.departureSamples >= 2) {
+      // A fresh, exact-trip fix beyond the outer hysteresis boundary proves
+      // departure. Two samples remain required for mere movement within it.
+      if (meters(v.stop!, o) > s.exitMeters || v.departureSamples >= 2) {
         v.state = "ENDED";
-        v.reason = "CONFIRMED_MOVEMENT";
+        v.reason = meters(v.stop!, o) > s.exitMeters ? "CONFIRMED_GEOFENCE_EXIT" : "CONFIRMED_MOVEMENT";
       }
     } else if (v.state === "DEPARTURE_CANDIDATE") {
       // A single excursion cannot prove continuous stationary duration either.

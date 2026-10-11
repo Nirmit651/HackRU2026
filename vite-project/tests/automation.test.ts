@@ -112,8 +112,6 @@ describe("continuous observed bus visits", () => {
   it("departure before boundary wins over later confirmation", () => {
     let v = visitUntil(590);
     v = advanceVisit(v, sample(599, 0.0008), s, new Date(base + 599000));
-    expect(v.state).toBe("DEPARTURE_CANDIDATE");
-    v = advanceVisit(v, sample(605, 0.0008), s, new Date(base + 605000));
     expect(v.state).toBe("ENDED");
     expect(v.departureAt).toBe(sample(599).sourceAt);
   });

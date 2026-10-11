@@ -396,6 +396,15 @@ export async function monitorNextBusBreak(m: Market, settings: Record<string, un
     await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at);
     await deferCollegeAveBreakRetry(m.environmentId, at, reason);
   };
+  const stateKey = `next-bus-break:${m.id}`;
+  const previous = (await db.automationState.findUnique({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } } }))?.data as unknown as Visit | undefined;
+  // Recover an unambiguous exit if the bus changed trips or vanished before a
+  // subsequent poll. It is still valid fresh-source evidence: two arrival
+  // samples followed by a position beyond the configured exit boundary.
+  if (previous?.state === "DEPARTURE_CANDIDATE" && previous.stop && previous.last && previous.arrivalSamples >= 2 && meters(previous.stop, previous.last) > Number(settings.exitMeters)) {
+    await finish(m, { units: "boolean", result: false }, { algorithm: settings.algorithm, reason: "CONFIRMED_GEOFENCE_EXIT", visit: previous, frozen: settings }, new Date(previous.last.sourceAt));
+    return;
+  }
   let live: Awaited<ReturnType<typeof tripshotFrozenTrip>>;
   try { live = await tripshotFrozenTrip(String(settings.tripId), String(settings.vehicleId)); }
   catch { await pause(); if (at >= new Date(String(settings.voidAfter))) await voidMarket("TRIPSHOT_UNAVAILABLE"); return add(at, 10); }
@@ -406,8 +415,6 @@ export async function monitorNextBusBreak(m: Market, settings: Record<string, un
   }
   const observation: Telemetry = { provider: "tripshot", vehicleId: live.vehicle.id, tripId: live.vehicle.tripId, routeId: live.vehicle.routeId, sourceAt: live.vehicle.updatedAt, receivedAt: live.vehicleFeedAt, latitude: live.vehicle.latitude, longitude: live.vehicle.longitude };
   const policy = settingsSchema.parse({ sourceSystem: "tripshot", sourceVerifiedLive: true, enterMeters: Number(settings.enterMeters), exitMeters: Number(settings.exitMeters), anchorMeters: Number(settings.anchorMeters ?? 25), maxGapSeconds: Number(settings.maxGapSeconds), latenessSeconds: Number(settings.latenessSeconds), durationSeconds: 600, stops: [settings.stop] });
-  const stateKey = `next-bus-break:${m.id}`;
-  const previous = (await db.automationState.findUnique({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } } }))?.data as unknown as Visit | undefined;
   const seed = settings.initialObservation as Telemetry | undefined;
   const initial = seed ? { ...emptyVisit(), state: "OUTSIDE" as const, reason: undefined, last: seed } : emptyVisit();
   const visit = advanceVisit(previous ?? initial, observation, policy, at);
