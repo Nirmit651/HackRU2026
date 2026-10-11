@@ -445,7 +445,7 @@ export async function lifecycle(
     return updated;
   });
 }
-export function resolveOutcome(m: Market, raw: ProviderEvidence, at: Date) {
+export function resolveOutcome(m: Market, raw: ProviderEvidence, at: Date, allowEarlyVoid = false) {
   const e = evidenceSchema.parse(raw),
     r = ruleSchema.parse(m.resolutionRule),
     d = e.normalizedData;
@@ -463,7 +463,7 @@ export function resolveOutcome(m: Market, raw: ProviderEvidence, at: Date) {
     "EVIDENCE_MISMATCH",
   );
   if (d.missing) {
-    ensure(at >= new Date(r.voidAfter), "AWAITING_EVIDENCE", 409);
+    ensure(allowEarlyVoid || at >= new Date(r.voidAfter), "AWAITING_EVIDENCE", 409);
     return "VOID" as const;
   }
   if (d.cancelled) return "VOID" as const;
@@ -496,7 +496,7 @@ export async function settle(
   marketId: string,
   raw: ProviderEvidence,
   resolverProfileId?: string,
-  options?: { allowEarly?: boolean; receiptExtra?: Record<string, unknown>; resolverVersion?: string },
+  options?: { allowEarly?: boolean; allowEarlyVoid?: boolean; receiptExtra?: Record<string, unknown>; resolverVersion?: string },
 ) {
   return transaction(async (tx) => {
     const pre = await tx.market.findUniqueOrThrow({ where: { id: marketId } });
@@ -508,7 +508,7 @@ export async function settle(
       at = await clock(tx, market.environmentId),
       e = evidenceSchema.parse(raw),
       payloadHash = hash(e),
-      outcome = resolveOutcome(market, e, at);
+      outcome = resolveOutcome(market, e, at, options?.allowEarlyVoid);
     const existing = await tx.settlement.findUnique({
       where: { marketId },
       include: { evidence: true },

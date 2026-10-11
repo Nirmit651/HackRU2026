@@ -393,7 +393,7 @@ export async function monitorBus(m: Market) {
 export async function monitorNextBusBreak(m: Market, settings: Record<string, unknown>, at: Date) {
   const pause = async () => { if (m.status === "OPEN") try { await lifecycle(m.id, "PAUSED"); } catch { /* concurrent transition is harmless */ } };
   const voidMarket = async (reason: string) => {
-    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at);
+    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at, { allowEarlyVoid: reason.endsWith("AFTER_ARRIVAL") });
     await deferCollegeAveBreakRetry(m.environmentId, at, reason);
   };
   const stateKey = `next-bus-break:${m.id}`;

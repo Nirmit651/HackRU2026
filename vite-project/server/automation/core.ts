@@ -174,6 +174,7 @@ export async function finish(
   data: ProviderEvidence["normalizedData"],
   raw: Record<string, unknown>,
   observed: Date,
+  options?: { allowEarlyVoid?: boolean },
 ) {
   if (await db.settlement.findUnique({ where: { marketId: m.id } })) return;
   await close(m);
@@ -204,5 +205,5 @@ export async function finish(
     },
     update: {},
   });
-  await settle(m.id, pending.data as unknown as ProviderEvidence);
+  await settle(m.id, pending.data as unknown as ProviderEvidence, undefined, options);
 }
