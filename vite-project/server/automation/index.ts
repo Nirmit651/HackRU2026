@@ -268,6 +268,23 @@ export async function automationTick() {
   await reconcileAutomation(undefined, true);
   for (let i = 0; i < 10; i++) if (!(await executeOne(handleJob))) break;
 }
+/**
+ * Serverless fallback for the existing five-second frozen-bus map request.
+ * It advances only that market; it never selects a replacement vehicle. A
+ * terminal YES/NO settlement is followed by the normal idempotent successor
+ * creation path, while VOID preserves its persisted ten-minute retry.
+ */
+export async function tickLiveBusMarket(marketId: string) {
+  const market = await db.market.findUniqueOrThrow({ where: { id: marketId } });
+  if (market.category !== "BUS_ARRIVAL" || ["RESOLVED", "VOIDED"].includes(market.status)) return market;
+  const automation = ruleSchema.parse(market.resolutionRule).automation;
+  if (automation?.type !== "bus" || automation.settings.kind !== "next_bus_break") return market;
+  await monitorBus(market);
+  const updated = await db.market.findUniqueOrThrow({ where: { id: marketId } });
+  if (["RESOLVED", "VOIDED"].includes(updated.status))
+    await ensureNextCollegeAveBreakMarket(updated.environmentId);
+  return updated;
+}
 export async function automationStatus(environmentId: string) {
   const [configs, jobs, heartbeat, unresolved, runs, providerFreshness] =
     await Promise.all([

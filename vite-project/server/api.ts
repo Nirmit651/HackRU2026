@@ -20,7 +20,7 @@ import { busSnapshot } from "./bus";
 import { createBusShowcase } from "./bus-showcase";
 import { tripshotLive } from "./tripshot";
 import { createMarket, createMarketInput } from "./markets";
-import { automationStatus, configure, reconcileAutomation } from "./automation";
+import { automationStatus, configure, reconcileAutomation, tickLiveBusMarket } from "./automation";
 import { types, nowFor } from "./automation/core";
 import { cleanupPresentationDemo, createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
 export const app = express();
@@ -400,9 +400,14 @@ app.get("/api/markets/:id/receipt", async (req, res) => {
     personal,
   });
 });
-app.get("/api/markets/:id/bus", async (req, res) =>
-  res.json({ snapshot: await busSnapshot(id(req.params.id)) }),
-);
+app.get("/api/markets/:id/bus", async (req, res) => {
+  const marketId = id(req.params.id);
+  // BusMap already polls this endpoint every five seconds. Advancing the
+  // frozen market here keeps Vercel deployments live without a second browser
+  // feed or a permanently running process.
+  await tickLiveBusMarket(marketId);
+  res.json({ snapshot: await busSnapshot(marketId) });
+});
 // Read-only operational display.  Upstream TripShot locations are server constants.
 app.get("/api/transit/live", async (_req, res) => {
   const live = await tripshotLive();
@@ -465,7 +470,9 @@ app.get("/api/markets/:id/automation", async (req, res) => {
           where: {
             environmentId_key: {
               environmentId: m.environmentId,
-              key: `visit:${r.automation.settings.visitId}`,
+              key: r.automation.settings.kind === "next_bus_break"
+                ? `next-bus-break:${m.id}`
+                : `visit:${r.automation.settings.visitId}`,
             },
           },
         })

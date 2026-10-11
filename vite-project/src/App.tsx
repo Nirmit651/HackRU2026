@@ -234,13 +234,20 @@ export default function App() {
   useEffect(() => {
     if (!selected) return;
     let stopped = false;
-    request<PublicMarket>(`/markets/${selected.id}`).then((m) => {
-      if (!stopped) setSelected(m);
-    });
+    const load = () => request<PublicMarket>(`/markets/${selected.id}`).then((m) => {
+      if (stopped) return;
+      setSelected(m);
+      if (["RESOLVED", "VOIDED"].includes(m.status)) refreshAccount();
+    }).catch(() => {});
+    void load();
+    const timer = ["RESOLVED", "VOIDED"].includes(selected.status)
+      ? undefined
+      : setInterval(load, 5000);
     return () => {
       stopped = true;
+      if (timer) clearInterval(timer);
     };
-  }, [refresh, selected?.id]);
+  }, [refreshAccount, selected?.id, selected?.status]);
   async function logout() {
     await supabase?.auth.signOut();
     sessionStorage.removeItem("demo-token");
