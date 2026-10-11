@@ -20,7 +20,7 @@ import { busSnapshot } from "./bus";
 import { createBusShowcase } from "./bus-showcase";
 import { tripshotLive } from "./tripshot";
 import { createMarket, createMarketInput } from "./markets";
-import { automationStatus, configure, reconcileAutomation, tickLiveBusMarket } from "./automation";
+import { automationStatus, automationTick, configure, reconcileAutomation, tickLiveBusMarket } from "./automation";
 import { types, nowFor } from "./automation/core";
 import { cleanupPresentationDemo, createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
 export const app = express();
@@ -235,6 +235,24 @@ const presentationTick = async (req: express.Request, res: express.Response) => 
 };
 app.post("/api/presentation/tick", presentationTick);
 app.get("/api/presentation/tick", presentationTick);
+// Production scheduling must not rely on an open BusMap page or a separately
+// managed worker process. Vercel Cron calls this protected endpoint once a
+// minute; the database queue remains the source of truth for due work.
+const automationTickHandler = async (req: express.Request, res: express.Response) => {
+  const token = req.headers.authorization?.replace(/^Bearer /, "");
+  const expected = process.env.CRON_SECRET;
+  ensure(
+    expected &&
+      token &&
+      expected.length === token.length &&
+      timingSafeEqual(Buffer.from(token), Buffer.from(expected)),
+    "UNAUTHORIZED",
+    401,
+  );
+  await automationTick();
+  res.json({ ok: true });
+};
+app.get("/api/automation/tick", automationTickHandler);
 app.get("/api/markets/:id/history", async (req, res) =>
   res.json(
     await history(

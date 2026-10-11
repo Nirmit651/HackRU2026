@@ -392,14 +392,18 @@ export async function monitorBus(m: Market) {
 }
 export async function monitorNextBusBreak(m: Market, settings: Record<string, unknown>, at: Date) {
   const pause = async () => { if (m.status === "OPEN") try { await lifecycle(m.id, "PAUSED"); } catch { /* concurrent transition is harmless */ } };
-  const voidMarket = async (reason: string) => {
-    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at, { allowEarlyVoid: reason.endsWith("AFTER_ARRIVAL") });
+  const voidMarket = async (reason: string, allowEarlyVoid = false) => {
+    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at, { allowEarlyVoid });
     await deferCollegeAveBreakRetry(m.environmentId, at, reason);
   };
   const stateKey = `next-bus-break:${m.id}`;
   const previous = (await db.automationState.findUnique({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } } }))?.data as unknown as Visit | undefined;
-  const staleAfterArrival = () => !!(previous?.t0 && previous.last &&
-    +at - +new Date(previous.last.sourceAt) > (Number(settings.maxGapSeconds) + Number(settings.latenessSeconds)) * 1000);
+  const staleGraceMs = (Number(settings.maxGapSeconds) + Number(settings.latenessSeconds)) * 1000;
+  const latestEvidenceAt = () => previous?.last?.sourceAt ?? (settings.initialObservation as Telemetry | undefined)?.sourceAt ?? String(settings.selectedAt);
+  const staleTooLong = () => {
+    const sourceAt = latestEvidenceAt();
+    return !!sourceAt && +at - +new Date(sourceAt) > staleGraceMs;
+  };
   // Recover an unambiguous exit if the bus changed trips or vanished before a
   // subsequent poll. It is still valid fresh-source evidence: two arrival
   // samples followed by a position beyond the configured exit boundary.
@@ -411,13 +415,13 @@ export async function monitorNextBusBreak(m: Market, settings: Record<string, un
   try { live = await tripshotFrozenTrip(String(settings.tripId), String(settings.vehicleId)); }
   catch {
     await pause();
-    if (staleAfterArrival()) await voidMarket("MISSING_FROZEN_VEHICLE_AFTER_ARRIVAL");
+    if (staleTooLong()) await voidMarket("MISSING_FROZEN_VEHICLE_AFTER_STALENESS_GRACE", true);
     else if (at >= new Date(String(settings.voidAfter))) await voidMarket("TRIPSHOT_UNAVAILABLE");
     return add(at, 10);
   }
   if (live.stale || !live.vehicle || live.vehicle.routeId !== String(settings.routeId) || (live.vehicle.tripId && live.vehicle.tripId !== String(settings.tripId))) {
     await pause();
-    if (staleAfterArrival()) await voidMarket(live.stale ? "STALE_EVIDENCE_AFTER_ARRIVAL" : "MISSING_FROZEN_VEHICLE_AFTER_ARRIVAL");
+    if (staleTooLong()) await voidMarket(live.stale ? "STALE_EVIDENCE_AFTER_STALENESS_GRACE" : "MISSING_FROZEN_VEHICLE_AFTER_STALENESS_GRACE", true);
     else if (at >= new Date(String(settings.voidAfter))) await voidMarket(live.stale ? "STALE_TRIPSHOT_EVIDENCE" : "MISSING_OR_IDENTITY_CHANGED_VEHICLE");
     return add(at, 10);
   }
