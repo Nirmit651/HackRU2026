@@ -51,6 +51,9 @@ export function MarketChart({
       rightPriceScale: { borderVisible: false },
       timeScale: {
         borderVisible: false,
+        fixLeftEdge: true,
+        fixRightEdge: true,
+        rightOffset: 0,
         timeVisible: true,
         secondsVisible: true,
         tickMarkFormatter: (t: unknown) =>
@@ -113,6 +116,7 @@ export function MarketChart({
           })),
         );
         chart.timeScale().fitContent();
+        chart.timeScale().applyOptions({ rightOffset: 0, fixLeftEdge: true, fixRightEdge: true });
         lastTime = points.at(-1)?.time ?? 0;
       } else
         for (const p of points.filter((p) => p.time >= lastTime)) {

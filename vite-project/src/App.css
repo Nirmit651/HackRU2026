@@ -2076,6 +2076,7 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 
 /* Server-timed HackRU presentation market. */
 .demo-admin-button { margin-right: 10px; white-space: nowrap; }
+.demo-admin-active { display: inline-flex; align-items: center; min-height: 36px; margin-right: 10px; padding: 0 12px; border: 1px solid #d7e5ff; border-radius: 8px; background: #eef5ff; color: #1d4ed8; font-size: 12px; font-weight: 800; }
 .presentation-panel { margin: 18px 0 22px; padding: 28px; border: 1px solid #f0c9d2; border-radius: 16px; background: radial-gradient(circle at 100% 0, #fff0f3, #fff 58%); text-align: center; }
 .presentation-panel .eyebrow { color: var(--scarlet); }
 .presentation-timer { display: block; margin: 10px 0 2px; color: var(--scarlet); font-size: clamp(54px, 10vw, 104px); font-variant-numeric: tabular-nums; letter-spacing: -.08em; line-height: .95; }
@@ -2084,6 +2085,7 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .presentation-stats { color: #6c6266; font-size: 13px; }
 .presentation-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
 .presentation-controls .danger { background: #9e102c; }
+.presentation-cleanup { margin-top: 12px; color: #756c70; font-size: 12px; }
 .modal-backdrop { position: fixed !important; inset: 0 !important; z-index: 1000 !important; display: grid !important; place-items: center !important; padding: 20px; background: rgba(22, 14, 17, .62) !important; backdrop-filter: blur(7px) !important; }
 .auth-dialog { position: relative; width: min(430px, 100%); padding: 32px; border: 1px solid #ead7dc; border-radius: 16px; background: #fff; color: #171216; box-shadow: 0 30px 90px rgba(32, 13, 20, .3); }
 .auth-dialog h2 { margin: 8px 0; font-size: 28px; }
@@ -2092,12 +2094,12 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .auth-dialog input { width: 100%; padding: 12px; border: 1px solid #d6cbd0; border-radius: 8px; background: #fff; color: #171216; font: inherit; }
 .auth-dialog .solid { width: 100%; justify-content: center; }
 .chart-visual { position: relative; min-height: 342px; overflow: hidden; border-radius: 10px; isolation: isolate; }
-.chart-trade-stack { position: absolute; left: 14px; bottom: 20px; z-index: 4; display: grid; gap: 5px; width: min(300px, calc(100% - 180px)); pointer-events: none; }
-.chart-trade-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; overflow: hidden; padding: 5px 8px; border: 1px solid rgba(220, 225, 236, .92); border-radius: 5px; background: rgba(255,255,255,.92); color: #5f565a; font-size: 11px; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; animation: trade-slide .24s ease-out; }
+.chart-trade-stack { position: absolute; left: 14px; bottom: 84px; z-index: 4; display: grid; gap: 3px; max-width: min(300px, calc(100% - 28px)); pointer-events: none; }
+.chart-trade-line { display: flex; align-items: center; gap: 4px; overflow: hidden; padding: 0; border: 0; border-radius: 0; background: transparent; color: #5f565a; font-size: 11px; line-height: 1.25; white-space: nowrap; text-overflow: ellipsis; animation: trade-slide .24s ease-out; }
 .chart-trade-line strong { color: #252024; font-weight: 800; }
 .chart-trade-line span { font-weight: 850; letter-spacing: -.01em; }
 .chart-trade-line.yes-trade span { color: #2563eb; }
 .chart-trade-line.no-trade span { color: #9a7100; }
 .presentation-restart { margin-top: 4px; border-color: #d31638; color: var(--scarlet); }
-@media (max-width: 520px) { .chart-visual { min-height: 300px; } .chart { height: 300px; } .chart-trade-stack { width: calc(100% - 28px); bottom: 58px; } .chart-last-trade { bottom: 14px; } }
+@media (max-width: 520px) { .chart-visual { min-height: 300px; } .chart { height: 300px; } .chart-trade-stack { bottom: 68px; } }
 @keyframes trade-slide { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }

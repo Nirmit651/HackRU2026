@@ -84,6 +84,31 @@ export async function presentationStatus(marketId: string) {
   return db.presentationDemoRun.findUniqueOrThrow({ where: { marketId }, include: { market: true } });
 }
 
+/** Removes only a completed presentation market and its disposable market data.
+ * Wallets and transfers are deliberately retained because they are shared
+ * ledger records used to keep account balances reconciled. */
+export async function cleanupPresentationDemo(marketId: string) {
+  return transaction(async (tx) => {
+    const run = await tx.presentationDemoRun.findUniqueOrThrow({ where: { marketId }, include: { market: true } });
+    ensure(run.status === "COMPLETED" && !!run.outcome, "PRESENTATION_NOT_COMPLETE", 409);
+    ensure(run.market.category === "PRESENTATION_DEMO" && ["RESOLVED", "VOIDED"].includes(run.market.status), "PRESENTATION_NOT_SETTLED", 409);
+
+    await tx.outboxDelivery.deleteMany({ where: { event: { marketId } } });
+    await tx.chainCommitment.deleteMany({ where: { marketId } });
+    await tx.payout.deleteMany({ where: { marketId } });
+    await tx.settlement.deleteMany({ where: { marketId } });
+    await tx.evidence.deleteMany({ where: { marketId } });
+    await tx.simulationDecision.deleteMany({ where: { runId: run.id } });
+    await tx.simulationBotState.deleteMany({ where: { runId: run.id } });
+    await tx.presentationDemoRun.delete({ where: { id: run.id } });
+    await tx.marketEvent.deleteMany({ where: { marketId } });
+    await tx.trade.deleteMany({ where: { marketId } });
+    await tx.position.deleteMany({ where: { marketId } });
+    await tx.market.delete({ where: { id: marketId } });
+    return { deleted: true, marketId };
+  });
+}
+
 export async function startPresentation(marketId: string) {
   const run = await transaction(async (tx) => {
     const run = await tx.presentationDemoRun.findUniqueOrThrow({ where: { marketId } });

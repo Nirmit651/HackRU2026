@@ -4,6 +4,7 @@ import type { Request } from "express";
 import { db, ensure } from "./db";
 const secret = randomBytes(32);
 const demoAdminSecret = process.env.DEMO_ADMIN_SESSION_SECRET ?? process.env.DEMO_ADMIN_PASSWORD ?? "development-only-demo-admin";
+export const demoAdminSessionSeconds = 10 * 365 * 24 * 60 * 60;
 const supabase =
   process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY
     ? createClient(
@@ -78,7 +79,7 @@ function demoAdminSignature(data: string) {
   return createHmac("sha256", demoAdminSecret).update(data).digest("base64url");
 }
 export function issueDemoAdminSession() {
-  const data = Buffer.from(JSON.stringify({ expires: Date.now() + 6 * 60 * 60 * 1000 })).toString("base64url");
+  const data = Buffer.from(JSON.stringify({ expires: Date.now() + demoAdminSessionSeconds * 1000 })).toString("base64url");
   return `${data}.${demoAdminSignature(data)}`;
 }
 export function demoAdmin(req: Request) {

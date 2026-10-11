@@ -14,7 +14,7 @@ import {
 } from "../shared/contracts";
 import { buy, sell, grantWallet, lifecycle, settle, reconcile } from "./engine";
 import { execution, saleExecution } from "./math";
-import { identity, scopedIdentity, admin, demoToken, localDemo, demoAdmin, issueDemoAdminSession, verifyDemoAdminPassword } from "./auth";
+import { identity, scopedIdentity, admin, demoToken, localDemo, demoAdmin, demoAdminSessionSeconds, issueDemoAdminSession, verifyDemoAdminPassword } from "./auth";
 import { history, diagnostics } from "./tiger";
 import { newDemo } from "./demo";
 import { busSnapshot } from "./bus";
@@ -22,7 +22,7 @@ import { createMarket, createMarketInput } from "./markets";
 import { verifyCommitment } from "./chain";
 import { automationStatus, configure, reconcileAutomation } from "./automation";
 import { types, nowFor } from "./automation/core";
-import { createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
+import { cleanupPresentationDemo, createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
 export const app = express();
 app.disable("x-powered-by");
 app.set("json replacer", (_key: string, v: unknown) =>
@@ -91,7 +91,7 @@ app.get("/api/demo-admin/session", (req, res) => {
 });
 app.post("/api/demo-admin/session", (req, res) => {
   verifyDemoAdminPassword(z.object({ password: z.string().min(1).max(200) }).parse(req.body).password);
-  res.setHeader("Set-Cookie", `scarlet_demo_admin=${issueDemoAdminSession()}; HttpOnly; Path=/; SameSite=Lax; Max-Age=21600${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+  res.setHeader("Set-Cookie", `scarlet_demo_admin=${issueDemoAdminSession()}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${demoAdminSessionSeconds}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
   res.json({ active: true });
 });
 app.delete("/api/demo-admin/session", (_req, res) => {
@@ -199,6 +199,7 @@ app.get("/api/presentation/:marketId", async (req, res) => {
 app.post("/api/presentation/create", async (req, res) => { demoAdmin(req); res.json(await createPresentationDemo()); });
 app.post("/api/presentation/:marketId/start", async (req, res) => { demoAdmin(req); res.json(await startPresentation(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/finish", async (req, res) => { demoAdmin(req); res.json(await finishPresentation(id(req.params.marketId))); });
+app.post("/api/presentation/:marketId/cleanup", async (req, res) => { demoAdmin(req); res.json(await cleanupPresentationDemo(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/whale", async (req, res) => { demoAdmin(req); const run = await presentationStatus(id(req.params.marketId)); res.json(await tickPresentationRun(run.id, true)); });
 app.post("/api/presentation/:marketId/bots", async (req, res) => {
   demoAdmin(req);

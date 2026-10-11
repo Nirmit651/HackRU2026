@@ -170,6 +170,11 @@ export default function App() {
         .catch(() => {});
     setRefresh((n) => n + 1);
   }, [environmentId, me]);
+  const closeCompletedPresentation = useCallback(() => {
+    setSelected(null);
+    setView("markets");
+    refreshAccount();
+  }, [refreshAccount]);
   useEffect(() => {
     configure()
       .then((c) => {
@@ -272,16 +277,7 @@ export default function App() {
           ))}
         </nav>
         <div className="account">
-          <button
-            className="outline demo-admin-button"
-            onClick={() =>
-              demoAdmin
-                ? request("/demo-admin/session", undefined, "DELETE").finally(() => setDemoAdmin(false))
-                : setDemoAdminLogin(true)
-            }
-          >
-            {demoAdmin ? "Leave admin mode" : "Become admin"}
-          </button>
+          {demoAdmin ? <span className="demo-admin-active">Admin mode</span> : <button className="outline demo-admin-button" onClick={() => setDemoAdminLogin(true)}>Become admin</button>}
           {me ? (
             <>
               <span className="cash">{dollars(balance)}</span>
@@ -506,7 +502,7 @@ export default function App() {
                 <a href="#resolution"><FileText size={14} /> Rules & resolution</a>
               </p>
               <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
-              {selected.category === "PRESENTATION_DEMO" && <PresentationPanel market={selected} admin={demoAdmin} onRefresh={refreshAccount} onRestart={() => request<{ market: PublicMarket }>("/presentation/create", {}).then((r) => { setSelected(r.market); refreshAccount(); }).catch((e) => setError(e.message))} />}
+              {selected.category === "PRESENTATION_DEMO" && <PresentationPanel market={selected} admin={demoAdmin} onRefresh={refreshAccount} onDeleted={closeCompletedPresentation} />}
             </div>
             <div className="detail-grid">
               <div className="detail-content">
@@ -687,7 +683,7 @@ export default function App() {
         onActive={() => {
           setDemoAdmin(true);
           setDemoAdminLogin(false);
-          setNotice("Presentation admin mode is active for six hours.");
+          setNotice("Presentation admin mode is active on this browser.");
         }}
       />
     </div>
@@ -706,14 +702,22 @@ function DemoAdminDialog({ open, onClose, onActive }: { open: boolean; onClose: 
   </section></div>;
 }
 type PresentationRun = { id: string; status: string; startedAt: string | null; deadlineAt: string | null; finishedAt: string | null; outcome: string | null; botCount: number; botTradeCount: number; botVolumeMicros: string; lastBotActivityAt: string | null };
-function PresentationPanel({ market, admin, onRefresh, onRestart }: { market: PublicMarket; admin: boolean; onRefresh: () => void; onRestart: () => void }) {
-  const [run, setRun] = useState<PresentationRun | null>(null), [nowMs, setNowMs] = useState(Date.now()), [error, setError] = useState("");
+function PresentationPanel({ market, admin, onRefresh, onDeleted }: { market: PublicMarket; admin: boolean; onRefresh: () => void; onDeleted: () => void }) {
+  const [run, setRun] = useState<PresentationRun | null>(null), [nowMs, setNowMs] = useState(Date.now()), [error, setError] = useState(""), cleanupStarted = useRef(false);
   const load = useCallback(() => request<PresentationRun>(`/presentation/${market.id}`).then(setRun).catch(() => setRun(null)), [market.id]);
   useEffect(() => { void load(); const poll = setInterval(() => { void load(); setNowMs(Date.now()); }, 500); const smooth = setInterval(() => setNowMs(Date.now()), 50); return () => { clearInterval(poll); clearInterval(smooth); }; }, [load]);
   const elapsed = run?.startedAt ? Math.min(60, Math.max(0, (nowMs - Date.parse(run.startedAt)) / 1000)) : 0;
   const remaining = Math.max(0, 60 - elapsed);
   const timer = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${(elapsed % 60).toFixed(1).padStart(4, "0")}`;
   const deadlinePassed = !!run?.deadlineAt && nowMs >= Date.parse(run.deadlineAt);
+  useEffect(() => {
+    if (!admin || !run?.outcome || cleanupStarted.current) return;
+    const timer = window.setTimeout(() => {
+      cleanupStarted.current = true;
+      void request(`/presentation/${market.id}/cleanup`, {}, "POST").then(onDeleted).catch((e) => { cleanupStarted.current = false; setError((e as Error).message); });
+    }, 4500);
+    return () => window.clearTimeout(timer);
+  }, [admin, market.id, onDeleted, run?.outcome]);
   async function control(path: string, body?: unknown) { try { await request(path, body ?? {}, "POST"); await load(); onRefresh(); } catch (e) { setError((e as Error).message); } }
   return <section className="presentation-panel">
     <span className="eyebrow">PRESENTATION DEMO MARKET</span>
@@ -724,8 +728,8 @@ function PresentationPanel({ market, admin, onRefresh, onRestart }: { market: Pu
       {run?.status === "RUNNING" && <><button className="solid danger" disabled={deadlinePassed} onClick={() => control(`/presentation/${market.id}/finish`)}>{deadlinePassed ? "Timer expired" : "Finish presentation"}</button><button className="outline" onClick={() => control(`/presentation/${market.id}/whale`)}>Trigger whale trade</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "PAUSED" })}>Pause bots</button><button className="outline" onClick={() => control(`/presentation/${market.id}/bots`, { status: "STOPPED" })}>Stop bots</button></>}
       {run?.status === "PAUSED" && <button className="solid" onClick={() => control(`/presentation/${market.id}/bots`, { status: "RUNNING" })}>Resume bots</button>}
       {run?.status === "STOPPED" && <button className="solid" onClick={() => control(`/presentation/${market.id}/bots`, { status: "RUNNING" })}>Restart bots</button>}
-      {run?.outcome && <button className="outline presentation-restart" onClick={onRestart}>Restart with a new demo</button>}
     </div>}
+    {run?.outcome && <p className="presentation-cleanup">Demo complete. Removing this temporary market…</p>}
     {error && <p className="trade-error">{error}</p>}
   </section>;
 }
