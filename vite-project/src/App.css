@@ -2088,6 +2088,7 @@ footer { background: transparent; color: #8b8990; border-top-color: #e6e4e6; }
 .trade-ticket .trade-summary dd:nth-of-type(4) { color: var(--ink) !important; font-size: 16px !important; text-align: right; }
 .trade-ticket .buy-button { width: 100%; min-height: 56px; margin: 0; border-radius: 9px; background: var(--scarlet); color: #fff; font-size: 15px; font-weight: 800; }
 .trade-ticket .trade-fineprint { display: block; }
+.trade-ticket .trade-summary .return-multiple { color: var(--scarlet) !important; font-weight: 800 !important; }
 @media (max-width: 440px) { .trade-ticket-heading { min-height: auto; padding-inline: 0 !important; } .trade-ticket .side-picker, .trade-ticket .quantity-label { margin-inline: 0; } .trade-ticket .trade-summary { margin-inline: 0 !important; } .trade-ticket .buy-button { width: 100%; margin-inline: 0; } }
 
 /* The ticket starts with direct quantity entry; preset buttons are omitted. */

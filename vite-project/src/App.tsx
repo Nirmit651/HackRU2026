@@ -54,6 +54,14 @@ const payoutMultiple = (price: string | number) => {
 };
 const multipleLabel = (price: string | number) =>
   `${payoutMultiple(price).toFixed(2)}×`;
+const quoteMultiple = (payoutMicros?: string, costMicros?: string) =>
+  payoutMicros && costMicros && BigInt(costMicros) > 0n
+    ? `${(Number(payoutMicros) / Number(costMicros)).toFixed(2)}×`
+    : "—";
+const quotePercent = (valueMicros?: string, costMicros?: string) =>
+  valueMicros && costMicros && BigInt(costMicros) > 0n
+    ? `${((Number(valueMicros) / Number(costMicros)) * 100).toFixed(2)}%`
+    : "—";
 const marketCloseLabel = (market: PublicMarket) =>
   `${market.status === "OPEN" ? "Closes" : "Closed"} ${date(market.closesAt)}`;
 function AnimatedProbability({ value }: { value: number }) {
@@ -967,26 +975,41 @@ function TradeTicket({
         <small>{action === "BUY" ? `Potential payout ${quote ? dollars(quote.winningPayoutMicros ?? "0") : "—"}` : "Price updates with every completed sale."}</small>
       </div>
       <dl className="trade-summary">
-        <dt>{action === "BUY" ? "Cost" : "You receive"}</dt>
-        <dd>{quote && quantity > 0 ? dollars(action === "BUY" ? quote.costMicros ?? "0" : quote.proceedsMicros ?? "0", 6) : "—"}</dd>
-        <dt className="hidden-summary">Average / share</dt>
-        <dd className="hidden-summary">
-          {quote && quantity > 0
-            ? dollars(BigInt(quote.costMicros ?? "0") / BigInt(quantity))
-            : "—"}
-        </dd>
-        <dt className="hidden-summary">
-          Maximum cost <small>(2% buffer)</small>
-        </dt>
-        <dd>{quote ? dollars(max, 6) : "—"}</dd>
-        <dt>{action === "BUY" ? "Max payout" : "Minimum receive"}</dt>
-        <dd>{quote && quantity > 0 ? action === "BUY" ? dollars(quote.winningPayoutMicros ?? "0") : dollars(max, 6) : "$R 0.00"}</dd>
-        <dt>Return multiple</dt>
-        <dd className="return-multiple">
-          {action === "BUY" && quote && quantity > 0
-            ? `${(Number(quote.winningPayoutMicros) / Number(quote.costMicros)).toFixed(2)}×`
-            : "—"}
-        </dd>
+        {action === "BUY" ? (
+          <>
+            <dt>Cost</dt>
+            <dd>{quote && quantity > 0 ? dollars(quote.costMicros ?? "0", 6) : "—"}</dd>
+            <dt>Price per share</dt>
+            <dd>
+              {quote && quantity > 0
+                ? dollars(BigInt(quote.costMicros ?? "0") / BigInt(quantity), 6)
+                : "—"}
+            </dd>
+            <dt>Max payout</dt>
+            <dd>{quote && quantity > 0 ? dollars(quote.winningPayoutMicros ?? "0") : "$R 0.00"}</dd>
+            <dt>Gross payout multiple</dt>
+            <dd className="return-multiple">
+              {quote && quantity > 0
+                ? quoteMultiple(quote.winningPayoutMicros, quote.costMicros)
+                : "—"}
+            </dd>
+            <dt>Net profit if correct</dt>
+            <dd>{quote && quantity > 0 ? dollars(quote.netProfitMicros ?? "0", 6) : "—"}</dd>
+            <dt>Net ROI if correct</dt>
+            <dd className="return-multiple">
+              {quote && quantity > 0
+                ? quotePercent(quote.netProfitMicros, quote.costMicros)
+                : "—"}
+            </dd>
+          </>
+        ) : (
+          <>
+            <dt>You receive</dt>
+            <dd>{quote && quantity > 0 ? dollars(quote.proceedsMicros ?? "0", 6) : "—"}</dd>
+            <dt>Minimum receive</dt>
+            <dd>{quote ? dollars(max, 6) : "—"}</dd>
+          </>
+        )}
       </dl>
       <button
         className="solid buy-button"
