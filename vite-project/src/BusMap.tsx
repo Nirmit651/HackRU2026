@@ -24,6 +24,22 @@ export const routePoints = (snapshot: BusSnapshot): LngLat[] => {
 const featureCollection = (features: Feature[]): FeatureCollection => ({ type: "FeatureCollection", features });
 const vehicleData = (snapshot: BusSnapshot, selectedRoute?: string, trackedPosition?: LngLat) => featureCollection(snapshot.vehicles.filter((vehicle) => !selectedRoute || vehicle.routeId === selectedRoute).map((vehicle) => ({ type: "Feature", properties: { routeId: vehicle.routeId, tracked: vehicle.id === snapshot.trackedVehicleId ? "yes" : "no" }, geometry: { type: "Point", coordinates: vehicle.id === snapshot.trackedVehicleId && trackedPosition ? trackedPosition : [vehicle.longitude, vehicle.latitude] } })));
 const stopData = (snapshot: BusSnapshot) => featureCollection(snapshot.stops.map((stop) => ({ type: "Feature", properties: { name: stop.name }, geometry: { type: "Point", coordinates: [stop.longitude, stop.latitude] } })));
+const circleCoordinates = (longitude: number, latitude: number, meters: number): LngLat[] => {
+  const latitudeDelta = meters / 111_320;
+  const longitudeDelta = meters / (111_320 * Math.max(Math.cos(latitude * Math.PI / 180), 0.01));
+  return Array.from({ length: 65 }, (_, index) => {
+    const angle = index * 2 * Math.PI / 64;
+    return [longitude + longitudeDelta * Math.cos(angle), latitude + latitudeDelta * Math.sin(angle)];
+  });
+};
+const geofenceData = (snapshot: BusSnapshot) => {
+  const stop = snapshot.stops[0], enterMeters = snapshot.geofenceEnterMeters;
+  if (!stop || !Number.isFinite(enterMeters) || !enterMeters || enterMeters <= 0) return featureCollection([]);
+  const circle = (meters: number, boundary: "enter" | "exit"): Feature => ({ type: "Feature", properties: { boundary }, geometry: { type: "Polygon", coordinates: [circleCoordinates(stop.longitude, stop.latitude, meters)] } });
+  const features: Feature[] = [circle(enterMeters, "enter")];
+  if (snapshot.geofenceExitMeters && snapshot.geofenceExitMeters > enterMeters) features.push(circle(snapshot.geofenceExitMeters, "exit"));
+  return featureCollection(features);
+};
 const routeData = (snapshot: BusSnapshot) => {
   const coordinates = routePoints(snapshot);
   return featureCollection(coordinates.length > 1 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates } }] : []);
@@ -55,6 +71,10 @@ export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: {
       map.addSource("bus-route", { type: "geojson", data: featureCollection([]) });
       map.addSource("bus-stops", { type: "geojson", data: featureCollection([]) });
       map.addSource("bus-vehicle", { type: "geojson", data: featureCollection([]) });
+      map.addSource("bus-geofence", { type: "geojson", data: featureCollection([]) });
+      map.addLayer({ id: "bus-geofence-fill", type: "fill", source: "bus-geofence", filter: ["==", ["get", "boundary"], "enter"], paint: { "fill-color": "#c8102e", "fill-opacity": 0.14 } });
+      map.addLayer({ id: "bus-geofence-entry-line", type: "line", source: "bus-geofence", filter: ["==", ["get", "boundary"], "enter"], paint: { "line-color": "#c8102e", "line-width": 2.5, "line-opacity": 0.9 } });
+      map.addLayer({ id: "bus-geofence-exit-line", type: "line", source: "bus-geofence", filter: ["==", ["get", "boundary"], "exit"], paint: { "line-color": "#8f8690", "line-width": 1.5, "line-opacity": 0.85, "line-dasharray": [2, 2] } });
       map.addLayer({ id: "bus-route-outline", type: "line", source: "bus-route", paint: { "line-color": "#ffffff", "line-width": 7, "line-opacity": 0.9 } });
       map.addLayer({ id: "bus-route-line", type: "line", source: "bus-route", paint: { "line-color": "#c8102e", "line-width": 4, "line-opacity": 0.92 } });
       map.addLayer({ id: "bus-stop-dot", type: "circle", source: "bus-stops", paint: { "circle-radius": 6, "circle-color": "#27242a", "circle-stroke-width": 2, "circle-stroke-color": "#ffffff" } });
@@ -70,11 +90,13 @@ export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: {
     if (!map || !ready || !snapshot) return;
     setSource(map, "bus-route", routeData(snapshot));
     setSource(map, "bus-stops", stopData(snapshot));
+    setSource(map, "bus-geofence", geofenceData(snapshot));
     if (!vehicle) { setSource(map, "bus-vehicle", vehicleData(snapshot, selectedRoute)); return; }
     const target: LngLat = [vehicle.longitude, vehicle.latitude];
     if (!fittedRef.current) {
       const bounds = new mapboxgl.LngLatBounds();
-      for (const point of [...routePoints(snapshot), ...snapshot.stops.map((stop) => [stop.longitude, stop.latitude] as LngLat)]) bounds.extend(point);
+      const stop = snapshot.stops[0], geofence = stop && snapshot.geofenceExitMeters ? circleCoordinates(stop.longitude, stop.latitude, snapshot.geofenceExitMeters) : [];
+      for (const point of [...routePoints(snapshot), ...snapshot.stops.map((stop) => [stop.longitude, stop.latitude] as LngLat), ...geofence]) bounds.extend(point);
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 52, maxZoom: 15, duration: 0 });
       fittedRef.current = true;
     }
@@ -92,7 +114,7 @@ export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: {
 
   return <section className="bus-panel" aria-label={`Route ${routeId} map`}>
     <div className="bus-panel-heading"><div><span className="section-label">Route {routeId} · {stopName}</span><h2>Bus route</h2></div><div className="bus-status">{failed ? "Live feed unavailable" : snapshot?.isSimulated ? "SIMULATED · recorded scenario" : snapshot && snapshot.vehicles.length === 0 ? "Selected vehicle unavailable" : snapshot && Date.now() - Date.parse(snapshot.observedAt) > 30000 ? "Stale vehicle data" : "Live vehicle data"}</div></div>
-    <p className="bus-panel-copy">{snapshot?.predictedArrival ? `Predicted arrival ${date(snapshot.predictedArrival)} · ` : ""}Follow the actual GTFS route shape to the target stop. Deadline {date(deadline)}.</p>
+    <p className="bus-panel-copy">{snapshot?.predictedArrival ? `Predicted arrival ${date(snapshot.predictedArrival)} · ` : ""}Follow the actual GTFS route shape to the target stop. {snapshot?.geofenceEnterMeters ? `The shaded circle is the ${snapshot.geofenceEnterMeters} m arrival geofence${snapshot.geofenceExitMeters ? `; the dashed ${snapshot.geofenceExitMeters} m ring confirms departure` : ""}. ` : ""}Deadline {date(deadline)}.</p>
     {!!snapshot?.activeRoutes?.length && <div className="route-chips" aria-label="Active routes">{snapshot.activeRoutes.map((active) => <button key={active} className={selectedRoute === active ? "active" : ""} onClick={() => setSelectedRoute(selectedRoute === active ? undefined : active)}>{active}</button>)}</div>}
     {accessToken ? <div ref={host} className="map" /> : <div className="map-empty">Mapbox is not configured.</div>}
     <small>{snapshot ? snapshot.vehicles.length ? `${snapshot.source} · vehicles ${date(snapshot.vehicleFeedAt ?? snapshot.observedAt)} · predictions ${date(snapshot.tripFeedAt ?? snapshot.observedAt)}` : "The frozen vehicle is not currently present in the live feed; no replacement bus is shown." : "No live arrival prediction is available."}</small>

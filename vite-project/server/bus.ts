@@ -32,6 +32,8 @@ export const busSchema = z.object({
     .max(10000)
     .optional(),
   etaSeconds: z.number().optional(),
+  geofenceEnterMeters: z.number().positive().optional(),
+  geofenceExitMeters: z.number().positive().optional(),
 });
 export async function busSnapshot(
   marketId: string,
@@ -63,6 +65,8 @@ export async function busSnapshot(
           tripFeedAt: live.tripFeedAt,
           vehicleFeedAt: live.vehicleFeedAt,
           stale: live.stale,
+          geofenceEnterMeters: Number(settings.enterMeters),
+          geofenceExitMeters: Number(settings.exitMeters),
         } as BusSnapshot;
       } catch (error) {
         // Keep upstream details server-side, but make a null snapshot diagnosable.

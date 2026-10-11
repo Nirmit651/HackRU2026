@@ -100,6 +100,9 @@ export interface BusSnapshot {
   tripFeedAt?: string;
   vehicleFeedAt?: string;
   stale?: boolean;
+  /** Frozen market geofence thresholds in meters; never inferred from live data. */
+  geofenceEnterMeters?: number;
+  geofenceExitMeters?: number;
 }
 export interface PublicEvent {
   id: string;
