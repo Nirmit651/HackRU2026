@@ -36,7 +36,20 @@ export async function claim() {
     WITH candidate AS (SELECT j.id FROM automation_jobs j JOIN environments e ON e.id=j."environmentId"
       WHERE ((j.status='PENDING' AND j."runAt" <= CASE WHEN e.kind='DEMO' THEN e."virtualNow" ELSE clock_timestamp() END)
         OR (j.status='PROCESSING' AND j."leaseUntil" < clock_timestamp())) AND j.attempts < 8
-      ORDER BY j."runAt" FOR UPDATE OF j SKIP LOCKED LIMIT 1)
+      -- Live frozen-bus monitoring is time-sensitive. Demo generator jobs may
+      -- be due indefinitely while their virtual clocks are paused, so they
+      -- must never starve a production bus observation.
+      ORDER BY CASE
+        WHEN j.kind='MONITOR' AND EXISTS (
+          SELECT 1 FROM markets m
+          WHERE m.id::text = j.payload->>'marketId'
+            AND m.category='BUS_ARRIVAL'
+            AND m.status IN ('OPEN','PAUSED','CLOSED')
+            AND m."environmentId"=j."environmentId"
+        ) THEN 0
+        WHEN e.kind='LIVE' THEN 1
+        ELSE 2
+      END, j."runAt" FOR UPDATE OF j SKIP LOCKED LIMIT 1)
     UPDATE automation_jobs SET status='PROCESSING', "leaseToken"=${token}::uuid,
       "leaseUntil"=clock_timestamp()+interval '120 seconds', attempts=attempts+1, "updatedAt"=clock_timestamp()
       WHERE id IN (SELECT id FROM candidate) RETURNING *`;
