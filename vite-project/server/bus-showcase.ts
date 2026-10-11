@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { configure } from "./automation";
-import { add, createAutomatedMarket, iso, nowFor, rule, settingsSchema } from "./automation/core";
+import { add, createAutomatedMarket, iso, nowFor, rule } from "./automation/core";
 import { meters } from "./automation/bus-state";
 import { db, ensure } from "./db";
+import { tripshotLive } from "./tripshot";
 
 export const collegeAveStudentCenter = { id: "college-avenue-student-center", name: "College Avenue Student Center", latitude: 40.50073, longitude: -74.44866, sourceUrl: "https://rutgers.transloc.com/" };
 const CANDIDATE_FRESH_SECONDS = 90;
@@ -42,25 +41,28 @@ export async function createBusShowcase() {
   const existing = await db.market.findFirst({ where: { environmentId: environment.id, generatorKey: { startsWith: "bus-showcase:" }, status: { in: ["DRAFT", "OPEN", "PAUSED", "CLOSED"] } }, orderBy: { createdAt: "desc" } });
   if (existing) return { ...existing, creationReplayed: true };
   const at = await nowFor(environment.id);
-  const latest = await db.$queryRaw<VehicleObservation[]>`
-    SELECT DISTINCT ON (vehicle_id) vehicle_id,route_id,latitude,longitude,source_measured_at,retrieved_at FROM public.bus_observations
-    WHERE source_system='rubus' AND is_valid AND observation_kind='vehicle_position' AND measurement_time_basis='source'
-      AND route_id IS NOT NULL AND latitude IS NOT NULL AND longitude IS NOT NULL AND source_measured_at IS NOT NULL
-    ORDER BY vehicle_id,source_measured_at DESC,id DESC`;
-  const history = await db.$queryRaw<VehicleObservation[]>`
-    SELECT vehicle_id,route_id,latitude,longitude,source_measured_at,retrieved_at FROM public.bus_observations
-    WHERE source_system='rubus' AND is_valid AND observation_kind='vehicle_position' AND measurement_time_basis='source'
-      AND route_id IS NOT NULL AND latitude IS NOT NULL AND longitude IS NOT NULL AND source_measured_at >= ${add(at, -15 * 60)}
-    ORDER BY vehicle_id,source_measured_at,id`;
-  const selected = selectNextBusCandidate(latest, history, at);
-  ensure(selected, "NO_ELIGIBLE_RUTGERS_BUS", 503);
-  const existingConfig = await db.automationConfig.findUnique({ where: { environmentId_type: { environmentId: environment.id, type: "bus" } } });
-  const currentSettings = existingConfig ? settingsSchema.parse(existingConfig.settings) : settingsSchema.parse({});
-  const stops = currentSettings.stops.some((stop) => stop.id === collegeAveStudentCenter.id) ? currentSettings.stops : [...currentSettings.stops, collegeAveStudentCenter];
-  await configure(environment.id, "bus", true, { ...currentSettings, sourceSystem: "rubus", sourceVerifiedLive: true, stops });
-  const closesAt = add(at, MAX_ETA_SECONDS), target = add(at, selected.etaSeconds + 600), voidAfter = add(closesAt, 15 * 60), eventId = randomUUID();
-  const condition = `YES if frozen Rutgers bus ${selected.vehicleId} on route ${selected.routeId} enters the College Avenue Student Center 65m geofence and remains continuously within it for at least 10 minutes. NO if it enters and is confirmed outside the geofence before 10 minutes. Trading closes on first qualifying entry. Missing, stale, conflicting, or wrong-route source-timestamped evidence is VOID after ${iso(voidAfter)}.`;
-  const settings = { kind: "next_bus_break", sourceSystem: "rubus", vehicleId: selected.vehicleId, routeId: selected.routeId, stop: collegeAveStudentCenter, opensAt: iso(at), closesAt: iso(closesAt), voidAfter: iso(voidAfter), enterMeters: 65, exitMeters: 75, maxGapSeconds: CANDIDATE_FRESH_SECONDS, latenessSeconds: 30, durationSeconds: 600, selectedAt: iso(at), selectedEtaSeconds: selected.etaSeconds, etaMethod: selected.etaMethod, algorithm: "rutgers-next-bus-break-v1", algorithmVersion: 1 };
-  return createAutomatedMarket({ environmentId: environment.id, generatorKey: `bus-showcase:${eventId}`, templateVersion: 1, slug: `bus-showcase-${eventId.slice(0, 12)}`, title: "Will the next bus arriving at College Avenue Student Center take a break?", description: condition, category: "BUS_ARRIVAL", opensAt: iso(at), closesAt: iso(closesAt), expectedResolutionAt: iso(target), resolutionRule: rule("bus", "rubus", eventId, closesAt, at, target, voidAfter, settings, condition), sourceUrl: collegeAveStudentCenter.sourceUrl,
-    context: { routeId: selected.routeId, vehicleId: selected.vehicleId, stopId: collegeAveStudentCenter.id, stopName: collegeAveStudentCenter.name, stop: collegeAveStudentCenter, destination: collegeAveStudentCenter.name, frozenEtaSeconds: selected.etaSeconds, selectionTimestamp: iso(at), selectionAlgorithm: settings.algorithm, selectionAlgorithmVersion: settings.algorithmVersion, etaMethod: selected.etaMethod, deadline: iso(target) } });
+  // Prediction, rather than proximity, determines the next bus.  This is the
+  // only selection path for the live market; the legacy RUBus query below is
+  // retained for its exported historical test helper, not used here.
+  const live = await tripshotLive();
+  ensure(!live.stale && live.nextArrival, "NO_LIVE_ARRIVAL_PREDICTION", 503);
+  const predicted = live.nextArrival;
+  const targetStops = live.targetStops;
+  ensure(targetStops.length > 0, "COLLEGE_AVE_STOP_NOT_FOUND", 503);
+  const selectedStop = targetStops.find((stop) => stop.id === predicted.stopId) ?? targetStops[0];
+  const selected = {
+    vehicleId: predicted.vehicleId ?? `trip:${predicted.tripId}`,
+    routeId: predicted.routeId,
+    tripId: predicted.tripId,
+    predictedArrival: predicted.arrivalAt,
+    stop: selectedStop,
+  };
+  const duplicate = await db.market.findFirst({ where: { environmentId: environment.id, category: "BUS_ARRIVAL", status: { in: ["DRAFT", "OPEN", "PAUSED", "CLOSED"] }, context: { path: ["tripId"], equals: selected.tripId } }, orderBy: { createdAt: "desc" } });
+  if (duplicate) return { ...duplicate, creationReplayed: true };
+  const closesAt = new Date(Math.max(+at + 60_000, +new Date(selected.predictedArrival) - 60_000));
+  const target = add(new Date(selected.predictedArrival), 300), voidAfter = add(target, 15 * 60), eventId = `${selected.tripId}:${selected.stop.id}`;
+  const stops = targetStops.map((stop) => ({ ...stop, sourceUrl: "https://rutgers.tripshot.com/" }));
+  const settings = { kind: "next_bus_break", sourceSystem: "tripshot", vehicleId: selected.vehicleId, routeId: selected.routeId, tripId: selected.tripId, stop: { ...selected.stop, sourceUrl: "https://rutgers.tripshot.com/" }, stops, opensAt: iso(at), closesAt: iso(closesAt), voidAfter: iso(voidAfter), enterMeters: 65, exitMeters: 75, maxGapSeconds: 45, latenessSeconds: 30, durationSeconds: 300, selectedAt: iso(at), predictedArrival: selected.predictedArrival, feedTimestamp: predicted.feedTimestamp, algorithm: "tripshot-next-college-ave-dwell-v2", algorithmVersion: 2 };
+  const condition = "YES: the selected bus arrives within the College Avenue Student Center stop radius and remains stationary there for at least 5 continuous minutes. NO: the selected bus arrives, then clearly leaves before 5 minutes. VOID: vehicle/trip identity changes, data becomes stale, there is an excessive data gap, the bus disappears, or the evidence is otherwise insufficient.";
+  return createAutomatedMarket({ environmentId: environment.id, generatorKey: `tripshot-college-ave:${selected.tripId}:${selected.stop.id}`, templateVersion: 2, slug: `tripshot-college-ave-${eventId.replace(/[^a-z0-9]/gi, "").slice(0, 18).toLowerCase()}`, title: "Will the next bus to arrive at College Avenue Student Center remain stopped for at least 5 minutes?", description: condition, category: "BUS_ARRIVAL", opensAt: iso(at), closesAt: iso(closesAt), expectedResolutionAt: iso(target), resolutionRule: rule("bus", "TripShot GTFS-Realtime", eventId, closesAt, at, target, voidAfter, settings, condition), sourceUrl: "https://rutgers.tripshot.com/", context: { routeId: selected.routeId, vehicleId: selected.vehicleId, tripId: selected.tripId, stopId: selected.stop.id, stopIds: targetStops.map((stop) => stop.id), stopName: selected.stop.name, stop: selected.stop, destination: selected.stop.name, predictedArrival: selected.predictedArrival, feedTimestamp: predicted.feedTimestamp, evidenceSource: "TripShot GTFS + GTFS-Realtime", deadline: iso(target), dwellSeconds: 300 } });
 }

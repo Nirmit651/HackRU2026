@@ -93,6 +93,13 @@ export interface BusSnapshot {
   stops: { id: string; name: string; latitude: number; longitude: number }[];
   routeGeometry?: [number, number][];
   etaSeconds?: number;
+  activeRoutes?: string[];
+  trackedVehicleId?: string | null;
+  selectedRouteId?: string;
+  predictedArrival?: string | null;
+  tripFeedAt?: string;
+  vehicleFeedAt?: string;
+  stale?: boolean;
 }
 export interface PublicEvent {
   id: string;

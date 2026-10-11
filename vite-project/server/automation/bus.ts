@@ -100,9 +100,9 @@ export function evaluateNextBusBreak(
     if (+new Date(row.sourceAt) - +new Date(previous.sourceAt) > settings.maxGapSeconds * 1000) return { void: "SOURCE_TIME_GAP_AFTER_ARRIVAL" };
     if (meters(market.stop, row) > settings.exitMeters) {
       outside++;
-      if (outside >= 2 && +new Date(row.sourceAt) < target) return { result: false, observation: row, arrival, reason: "CONFIRMED_DEPARTURE_BEFORE_10_MINUTES" };
+      if (outside >= 2 && +new Date(row.sourceAt) < target) return { result: false, observation: row, arrival, reason: "CONFIRMED_DEPARTURE_BEFORE_REQUIRED_DWELL" };
     } else outside = 0;
-    if (+new Date(row.sourceAt) >= target) return { result: true, observation: row, arrival, reason: "CONTINUOUS_GEOFENCE_DWELL_FOR_10_MINUTES" };
+    if (+new Date(row.sourceAt) >= target) return { result: true, observation: row, arrival, reason: "CONTINUOUS_CONFIRMED_DWELL" };
   }
   return null;
 }

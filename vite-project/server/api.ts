@@ -18,6 +18,7 @@ import { history, diagnostics } from "./tiger";
 import { newDemo } from "./demo";
 import { busSnapshot } from "./bus";
 import { createBusShowcase } from "./bus-showcase";
+import { tripshotLive } from "./tripshot";
 import { createMarket, createMarketInput } from "./markets";
 import { automationStatus, configure, reconcileAutomation } from "./automation";
 import { types, nowFor } from "./automation/core";
@@ -397,6 +398,11 @@ app.get("/api/markets/:id/receipt", async (req, res) => {
 app.get("/api/markets/:id/bus", async (req, res) =>
   res.json({ snapshot: await busSnapshot(id(req.params.id)) }),
 );
+// Read-only operational display.  Upstream TripShot locations are server constants.
+app.get("/api/transit/live", async (_req, res) => {
+  const live = await tripshotLive();
+  res.json(live);
+});
 app.get("/api/admin/health", async (req, res) => {
   await admin(req);
   res.json(await diagnostics());

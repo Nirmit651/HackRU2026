@@ -355,7 +355,7 @@ export default function App() {
               </div>
               {demoAdmin && <div className="admin-market-actions">
                 <button className="outline" onClick={() => request<{ market: PublicMarket }>("/presentation/create", {}).then(({ market }) => { setSelected(market); setView("markets"); refreshAccount(); }).catch((e) => setError(e.message))}>Create presentation demo</button>
-                <button className="outline" onClick={() => request<{ market: PublicMarket }>("/bus/showcase", {}).then(({ market }) => { setSelected(market); setView("markets"); refreshAccount(); }).catch((e) => setError(e.message))}>Create bus arrival demo</button>
+                <button className="outline" onClick={() => request<{ market: PublicMarket }>("/bus/showcase", {}).then(({ market }) => { setSelected(market); setView("markets"); refreshAccount(); }).catch((e) => setError(e.message))}>Create next College Ave dwell market</button>
               </div>}
             </div>
             <div className="discovery-tools">
@@ -504,7 +504,7 @@ export default function App() {
             </div>
             {selected.category === "BUS_ARRIVAL" && (
               <>
-                {selected.context.frozenEtaSeconds !== undefined && <div className="bus-panel-copy"><strong>Frozen selection:</strong> Route {String(selected.context.routeId)} · vehicle {String(selected.context.vehicleId)} · estimated {Math.ceil(Number(selected.context.frozenEtaSeconds) / 60)} minutes to {String(selected.context.destination ?? selected.context.stopName)} at creation. YES requires a continuous 10-minute stay inside the destination geofence; confirmed early departure is NO.</div>}
+                <div className="bus-panel-copy"><strong>Frozen selection:</strong> Route {String(selected.context.routeId ?? "unknown")} · vehicle {String(selected.context.vehicleId ?? "pending assignment")} · trip {String(selected.context.tripId ?? "unknown")}. YES requires five continuous minutes of observed dwell inside the destination geofence; confirmed early departure is NO. Data gaps, stale data, or identity changes VOID the market.</div>
                 <Suspense fallback={<p>Loading map…</p>}>
                   <BusMap
                     marketId={selected.id}

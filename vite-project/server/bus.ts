@@ -3,6 +3,7 @@ import type { BusSnapshot } from "../shared/contracts";
 import { db, ensure } from "./db";
 import { ruleSchema } from "../shared/contracts";
 import type { Visit } from "./automation/bus-state";
+import { tripshotLive } from "./tripshot";
 const coordinate = {
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -43,6 +44,31 @@ export async function busSnapshot(
   const automation = ruleSchema.parse(market.resolutionRule).automation;
   if (automation?.type === "bus") {
     const settings = automation.settings;
+    if (settings.sourceSystem === "tripshot") {
+      try {
+        const live = await tripshotLive();
+        const tracked = live.nextArrival && (live.vehicles.find((vehicle) => vehicle.id === String(settings.vehicleId) || vehicle.tripId === String(settings.tripId)));
+        return {
+          source: "TripShot GTFS + GTFS-Realtime",
+          isSimulated: false,
+          observedAt: live.observedAt,
+          receivedAt: live.vehicleFeedAt,
+          vehicles: live.vehicles.map((vehicle) => ({ id: vehicle.id, routeId: vehicle.routeId, latitude: vehicle.latitude, longitude: vehicle.longitude, heading: vehicle.heading, updatedAt: vehicle.updatedAt })),
+          stops: live.targetStops,
+          routeGeometry: live.routeGeometry,
+          etaSeconds: live.nextArrival ? Math.max(0, Math.round((+new Date(live.nextArrival.arrivalAt) - Date.now()) / 1000)) : undefined,
+          activeRoutes: [...new Set(live.vehicles.map((vehicle) => vehicle.routeId))],
+          trackedVehicleId: tracked?.id ?? null,
+          selectedRouteId: live.nextArrival?.routeId ?? String(settings.routeId),
+          predictedArrival: live.nextArrival?.arrivalAt ?? null,
+          tripFeedAt: live.tripFeedAt,
+          vehicleFeedAt: live.vehicleFeedAt,
+          stale: live.stale,
+        } as BusSnapshot;
+      } catch {
+        return null;
+      }
+    }
     if (
       settings.kind === "arrival_by_deadline" ||
       settings.kind === "presence_at_time" ||

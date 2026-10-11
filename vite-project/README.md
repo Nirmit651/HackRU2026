@@ -141,6 +141,14 @@ CFBD football and CBBD basketball adapters validate finality, scores, Rutgers pa
 
 Bus settlement uses the normalized boundary. An outage is never evidence of NO. Missing results stay pending until evidence invokes the frozen VOID policy.
 
+### Rutgers TripShot live bus market
+
+`server/tripshot.ts` is the server-only provider for Rutgers' TripShot static GTFS archive and GTFS-Realtime TripUpdates/VehiclePositions feeds. It caches static GTFS for 24 hours, refreshes live feeds no more than every 15 seconds per process, enforces 8-second fetch timeouts and marks feeds stale after 45 seconds. It finds all College Avenue Student Center platforms by normalized `stops.txt` names, not a guessed ID. The browser receives only normalized map data from `/api/markets/:id/bus`; it never chooses or fetches an upstream URL.
+
+The admin action **Create next College Ave dwell market** (`POST /api/bus/showcase`) refuses to create a market without a fresh next-arrival prediction. It freezes the TripShot trip/route/vehicle (when assigned), stop platform, feed timestamp, and five-minute dwell rules. Its outcome is observed dwell only: it does not make any claim about driver intent.
+
+Settlement-grade observations must be written by a persistent collector to `bus_observations` every 10–20 seconds, then the supervised worker (`npm run worker`) evaluates frozen markets. Browser map polling is display-only evidence. Vercel Cron is unsuitable for continuous five-minute dwell coverage at ordinary plan frequencies; use a persistent worker/scheduled container instead. Run `npm run tripshot:smoke` after deployment to validate upstream freshness.
+
 ## Verification and performance
 
 ```sh
