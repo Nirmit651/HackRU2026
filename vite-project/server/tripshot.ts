@@ -71,7 +71,9 @@ export function selectNextArrival(entities: any[], targetIds: Set<string>, trips
 async function live(): Promise<LiveTransit> {
   if (realtimeCache && Date.now() - realtimeCache.at < REALTIME_TTL_MS) return realtimeCache.value;
   if (!refreshRealtime) refreshRealtime = (async () => {
-    const gtfs = await staticGtfs(); const [tripsRaw, vehiclesRaw] = await Promise.all([fetchBytes(TRIPS_URL), fetchBytes(VEHICLES_URL)]);
+    // On a cold process the static ZIP can take several seconds. Start all
+    // independent upstream requests together instead of serializing them.
+    const [gtfs, tripsRaw, vehiclesRaw] = await Promise.all([staticGtfs(), fetchBytes(TRIPS_URL), fetchBytes(VEHICLES_URL)]);
     const tripFeed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(tripsRaw), vehicleFeed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(vehiclesRaw);
     const tripFeedAt = new Date(seconds((tripFeed.header as any)?.timestamp) * 1000 || Date.now()).toISOString(), vehicleFeedAt = new Date(seconds((vehicleFeed.header as any)?.timestamp) * 1000 || Date.now()).toISOString();
     const arrival = selectNextArrival((tripFeed as any).entity ?? [], new Set(gtfs.collegeStops.map((s) => s.id)), gtfs.trips, Date.now(), tripFeedAt);
