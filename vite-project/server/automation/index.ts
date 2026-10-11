@@ -101,6 +101,18 @@ export async function reconcileAutomation(
         );
     }
     for (let m of markets) {
+      // Historical presentation/demo markets may predate the current rule
+      // schema. One such row must not prevent the persistent worker from
+      // monitoring every valid live market in the environment.
+      const parsedRule = ruleSchema.safeParse(m.resolutionRule);
+      if (!parsedRule.success) {
+        console.warn("Skipping market with unsupported automation rule", {
+          marketId: m.id,
+          issues: parsedRule.error.issues.map((issue) => issue.message),
+        });
+        continue;
+      }
+      const r = parsedRule.data;
       if (m.status === "DRAFT") {
         if (at < m.closesAt) m = await lifecycle(m.id, "OPEN");
         else {
@@ -108,7 +120,7 @@ export async function reconcileAutomation(
           await finish(
             m,
             {
-              units: ruleSchema.parse(m.resolutionRule).units,
+              units: r.units,
               cancelled: true,
             },
             { reason: "RECOVERED_DRAFT_AFTER_CUTOFF_NO_TRADING" },
@@ -119,7 +131,6 @@ export async function reconcileAutomation(
       }
       if (["OPEN", "PAUSED"].includes(m.status) && at >= m.closesAt)
         m = await lifecycle(m.id, "CLOSED");
-      const r = ruleSchema.parse(m.resolutionRule);
       const visit =
         r.automation?.type === "bus"
           ? await db.automationState.findUnique({
@@ -254,7 +265,16 @@ export async function handleJob(job: AutomationJob): Promise<Date | void> {
     return;
   }
   if (["RESOLVED", "VOIDED"].includes(m.status)) return;
-  const r = ruleSchema.parse(m.resolutionRule);
+  const parsedRule = ruleSchema.safeParse(m.resolutionRule);
+  if (!parsedRule.success) {
+    console.warn("Skipping job with unsupported automation rule", {
+      jobId: job.id,
+      marketId: m.id,
+      issues: parsedRule.error.issues.map((issue) => issue.message),
+    });
+    return;
+  }
+  const r = parsedRule.data;
   if (payload.visitId && payload.visitId !== r.automation?.settings.visitId)
     return;
   if (r.automation?.type === "bus") {
