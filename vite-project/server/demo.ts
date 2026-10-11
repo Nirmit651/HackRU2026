@@ -10,15 +10,17 @@ import {
   reconcile,
 } from "./engine";
 import { hash } from "./math";
+import { add, iso } from "./automation/core";
 import {
   categories,
   ruleSchema,
   type ProviderEvidence,
 } from "../shared/contracts";
+import { configure } from "./automation";
+import { consumeTelemetry, generateScheduledMarkets, monitorBus } from "./automation/bus";
 const start = new Date("2026-10-10T16:00:00.000Z");
 export const titles = [
   "Will the demo station reach 75°F?",
-  "Will the demo LX reach Livingston on time?",
   "Will the demo station record 0.10 inches of rain?",
   "Will Rutgers win the simulated football game?",
 ];
@@ -36,7 +38,7 @@ function random01(seed: number, tick: number, salt: number) {
   return (value >>> 0) / 4294967296;
 }
 
-const demoSentiment = [0.82, 0.68, 0.28, 0.76];
+const demoSentiment = [0.82, 0.28, 0.76];
 export async function newDemo(
   seed = 2026,
   key = `demo-${randomUUID().slice(0, 8)}`,
@@ -76,19 +78,21 @@ export async function newDemo(
     });
     await grantWallet(bot.id, env.id);
   }
-  for (let i = 0; i < categories.length; i++) {
+  const genericCategories = categories.filter((category) => category !== "BUS_ARRIVAL");
+  for (let i = 0; i < genericCategories.length; i++) {
     const closesAt = new Date(+start + 120000),
       windowStart = new Date(+start + 121000),
       windowEnd = new Date(+start + 180000),
       voidAfter = new Date(+start + 240000),
       provider = "demo-fixture-v1",
-      externalEventId = `campus-v1-${categories[i]}`;
+      category = genericCategories[i],
+      externalEventId = `campus-v1-${category}`;
     const rule = ruleSchema.parse({
       canonicalizationVersion: "rutgers-v1",
       yesCondition:
-        i === 0
+        category === "TEMPERATURE"
           ? "Observed temperature is at least 75 degrees Fahrenheit."
-          : i === 2
+          : category === "RAINFALL"
             ? "Accumulated rainfall is at least 0.10 inches."
             : "The named synthetic event has a final positive result.",
       provider,
@@ -96,7 +100,7 @@ export async function newDemo(
       windowStart: windowStart.toISOString(),
       windowEnd: windowEnd.toISOString(),
       cutoff: closesAt.toISOString(),
-      units: i === 0 ? "F" : i === 2 ? "in" : "boolean",
+      units: category === "TEMPERATURE" ? "F" : category === "RAINFALL" ? "in" : "boolean",
       rounding: "Compare the unrounded observed value.",
       finality: "FINAL",
       missingPolicy: "PENDING_THEN_VOID",
@@ -104,8 +108,8 @@ export async function newDemo(
       cancellationPolicy: "VOID",
       tiePolicy: "NO",
       postponementPolicy: "VOID",
-      threshold: i === 0 ? 75 : i === 2 ? 0.1 : undefined,
-      comparison: i === 0 || i === 2 ? "GTE" : "TRUE",
+      threshold: category === "TEMPERATURE" ? 75 : category === "RAINFALL" ? 0.1 : undefined,
+      comparison: category === "TEMPERATURE" || category === "RAINFALL" ? "GTE" : "TRUE",
     });
     const market = await transaction(async (tx) => {
       await lockEnvironment(tx, env.id);
@@ -122,7 +126,7 @@ export async function newDemo(
           title: titles[i],
           description:
             "Synthetic HackRU scenario. Prices come from actual simulated purchases; outcomes are fixtures.",
-          category: categories[i],
+          category,
           opensAt: start,
           closesAt,
           expectedResolutionAt: windowEnd,
@@ -131,15 +135,7 @@ export async function newDemo(
           provider,
           sourceUrl: "https://example.invalid/hackru/campus-v1",
           externalEventId,
-          context:
-            i === 1
-              ? {
-                  routeId: "LX",
-                  stopId: "livingston-plaza",
-                  stopName: "Livingston Plaza",
-                  deadline: windowEnd.toISOString(),
-                }
-              : {},
+          context: {},
           marketMakerWalletId: maker.id,
         },
       });
@@ -158,6 +154,37 @@ export async function newDemo(
     });
     await lifecycle(market.id, "OPEN");
   }
+  const stop = {
+    id: "livingston-plaza",
+    name: "Livingston Plaza",
+    latitude: 40.5235,
+    longitude: -74.437,
+    sourceUrl: "https://example.invalid/demo/livingston-plaza",
+  };
+  const bus = await configure(env.id, "bus", true, {
+    sourceSystem: "demo-fixture",
+    stops: [stop],
+    scheduledMarkets: [
+      { id: "demo-arrival", kind: "arrival_by_deadline", vehicleId: "demo", routeId: "LX", stopId: stop.id, opensAt: iso(start), closesAt: iso(add(start, 10)), deadline: iso(add(start, 40)), voidAfter: iso(add(start, 120)) },
+      { id: "demo-presence", kind: "presence_at_time", vehicleId: "demo", routeId: "LX", stopId: stop.id, opensAt: iso(start), closesAt: iso(add(start, 10)), targetTime: iso(add(start, 60)), voidAfter: iso(add(start, 120)) },
+    ],
+  });
+  await generateScheduledMarkets(bus, start);
+  const feed = async (seconds: number, latitude: number, longitude: number) => {
+    const at = add(start, seconds);
+    await setDemoTime(env.id, at);
+    await consumeTelemetry(bus, {
+      provider: "demo-fixture", vehicleId: "demo", routeId: "LX",
+      sourceAt: iso(at), receivedAt: iso(at), latitude, longitude,
+    }, true);
+  };
+  await feed(30, 40.5231, -74.4364);
+  await feed(60, 40.5231, -74.4364);
+  for (const market of await db.market.findMany({ where: { environmentId: env.id, generatorKey: { startsWith: "bus-scheduled:" } } }))
+    await monitorBus(market);
+  await feed(70, 40.5, -74.4);
+  for (let seconds = 80; seconds <= 700; seconds += 10)
+    await feed(seconds, 40.5231, -74.4364);
   return env;
 }
 export async function setDemoTime(environmentId: string, at: Date) {

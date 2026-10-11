@@ -79,15 +79,15 @@ export function evaluateScheduledMarket(
   return { result: false, observation: last, reason: "CONTINUOUS_SOURCE_TIME_COVERAGE_WITHOUT_ARRIVAL" };
 }
 
-async function generateScheduledMarkets(config: AutomationConfig, at: Date) {
+export async function generateScheduledMarkets(config: AutomationConfig, at: Date) {
   const s = settingsSchema.parse(config.settings);
   for (const scheduled of s.scheduledMarkets) {
     if (at < new Date(scheduled.opensAt) || at >= new Date(scheduled.closesAt)) continue;
     const stop = s.stops.find((candidate) => candidate.id === scheduled.stopId)!;
     const timing = scheduled.kind === "arrival_by_deadline" ? scheduled.deadline! : scheduled.targetTime!;
     const question = scheduled.kind === "arrival_by_deadline"
-      ? `Will ${scheduled.routeId} bus ${scheduled.vehicleId} reach ${stop.name} by ${timing}?`
-      : `Will ${scheduled.routeId} bus ${scheduled.vehicleId} be at ${stop.name} at ${timing}?`;
+      ? `Will ${scheduled.vehicleId} ${scheduled.routeId} bus reach ${stop.name} by ${timing}?`
+      : `Will ${scheduled.vehicleId} ${scheduled.routeId} bus be at ${stop.name} at ${timing}?`;
     const condition = scheduled.kind === "arrival_by_deadline"
       ? `YES if a valid ${s.sourceSystem} source-timestamped vehicle_position for vehicle ${scheduled.vehicleId} on route ${scheduled.routeId} enters the frozen ${s.enterMeters}m stop radius by ${timing}. NO only with continuous source-time coverage from market open through the deadline, no gap over ${s.maxGapSeconds}s, and no qualifying arrival. Otherwise VOID after ${scheduled.voidAfter}.`
       : `YES/NO is determined by the first valid ${s.sourceSystem} source-timestamped vehicle_position for vehicle ${scheduled.vehicleId} on route ${scheduled.routeId} at or within ${DECISION_WINDOW_SECONDS}s after ${timing}: YES inside, NO outside the frozen ${s.enterMeters}m stop radius. This does not claim literal physical presence at an unobserved instant; missing, stale, conflicting, or wrong-route evidence VOIDs.`;
@@ -144,6 +144,21 @@ export async function consumeTelemetry(
     )
       previous = { ...emptyVisit(), last: previous.last };
     const value = advanceVisit(previous, observation, s, at);
+    if (env.kind === "DEMO" && simulated) {
+      const key = `demo-scheduled:${observation.provider}:${observation.vehicleId}:${observation.routeId}`;
+      const scheduled = await tx.automationState.findUnique({
+        where: { environmentId_key: { environmentId: env.id, key } },
+      });
+      const observations = [
+        ...((scheduled?.data as unknown as Telemetry[] | undefined) ?? []),
+        observation,
+      ].slice(-500);
+      await tx.automationState.upsert({
+        where: { environmentId_key: { environmentId: env.id, key } },
+        create: { environmentId: env.id, key, kind: "BUS_DEMO_SCHEDULED", data: observations as never },
+        update: { data: observations as never, version: { increment: 1 } },
+      });
+    }
     await tx.automationState.upsert({
       where: { environmentId_key: { environmentId: env.id, key } },
       create: {
@@ -241,7 +256,7 @@ export async function consumeTelemetry(
       generatorKey,
       templateVersion: 1,
       slug: slug(generatorKey),
-      title: `Will bus ${observation.vehicleId} make a 10-minute stop at ${visit.stop!.name}?`,
+      title: `Will ${observation.vehicleId} ${observation.routeId ?? ""} bus stay stopped at ${visit.stop!.name} for over 10 minutes?`,
       description: condition,
       category: "BUS_ARRIVAL",
       opensAt: iso(at),
@@ -348,7 +363,22 @@ export async function monitorScheduledBus(m: Market, settings: Record<string, un
   const kind = settings.kind as "arrival_by_deadline" | "presence_at_time";
   const stop = settings.stop as { latitude: number; longitude: number };
   const decision = new Date(String(kind === "arrival_by_deadline" ? settings.deadline : settings.targetTime));
-  const rows = await db.$queryRaw<{
+  const env = await db.environment.findUniqueOrThrow({ where: { id: m.environmentId } });
+  const rows = env.kind === "DEMO"
+    ? ((await db.automationState.findUnique({
+        where: {
+          environmentId_key: {
+            environmentId: m.environmentId,
+            key: `demo-scheduled:${String(settings.sourceSystem)}:${String(settings.vehicleId)}:${String(settings.routeId)}`,
+          },
+        },
+      }))?.data as unknown as Telemetry[] | undefined ?? []).map((row) => ({
+        source_system: row.provider, vehicle_id: row.vehicleId,
+        source_measured_at: new Date(row.sourceAt), retrieved_at: new Date(row.receivedAt),
+        latitude: row.latitude, longitude: row.longitude, route_id: row.routeId,
+        source_observation_id: row.sequenceId ?? null,
+      }))
+    : await db.$queryRaw<{
     source_system: string; vehicle_id: string; source_measured_at: Date; retrieved_at: Date;
     latitude: number; longitude: number; route_id: string | null; source_observation_id: string | null;
   }[]>`

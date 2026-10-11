@@ -1,16 +1,17 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-const { queryRaw, finish, findMarket, findEnvironment } = vi.hoisted(() => ({
+const { queryRaw, finish, findMarket, findEnvironment, findAutomationState } = vi.hoisted(() => ({
   queryRaw: vi.fn(),
   finish: vi.fn(),
   findMarket: vi.fn(),
   findEnvironment: vi.fn(),
+  findAutomationState: vi.fn(),
 }));
 vi.mock("../server/db", () => ({
   db: {
     $queryRaw: queryRaw,
     market: { findUniqueOrThrow: findMarket },
     environment: { findUniqueOrThrow: findEnvironment },
-    automationState: { findUnique: vi.fn() },
+    automationState: { findUnique: findAutomationState },
   },
   transaction: vi.fn(),
   lockEnvironment: vi.fn(),
@@ -160,6 +161,7 @@ describe("scheduled bus markets", () => {
   beforeEach(() => {
     finish.mockClear();
     queryRaw.mockReset();
+    findEnvironment.mockResolvedValue({ kind: "LIVE" });
   });
   it("validates scheduled IDs, timing, and verified stop references", () => {
     expect(() => settingsSchema.parse({
@@ -204,6 +206,7 @@ describe("scheduled bus markets", () => {
     expect(finish).not.toHaveBeenCalled();
     await monitorScheduledBus(market, settings, new Date(settings.voidAfter));
     expect(finish).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
   });
   it("keeps missing presence evidence pending after its window until voidAfter, then voids", async () => {
     queryRaw.mockResolvedValue([]);
@@ -212,6 +215,19 @@ describe("scheduled bus markets", () => {
     expect(finish).not.toHaveBeenCalled();
     await monitorScheduledBus(market, settings, new Date(settings.voidAfter));
     expect(finish).toHaveBeenCalledTimes(1);
+  });
+  it("uses simulated observations for DEMO instead of the collector table", async () => {
+    findEnvironment.mockResolvedValue({ kind: "DEMO" });
+    findAutomationState.mockResolvedValue({ data: [sample(30)] });
+    const settings = monitorSettings("arrival_by_deadline");
+    await monitorScheduledBus({ id: "demo-market", environmentId: "env" } as never, settings, new Date("2026-10-10T16:02:00.000Z"));
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(finish).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ result: true }),
+      expect.anything(),
+      expect.any(Date),
+    );
   });
 });
 describe("scheduled bus snapshots", () => {
