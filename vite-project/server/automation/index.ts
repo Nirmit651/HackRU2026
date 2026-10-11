@@ -6,6 +6,7 @@ import { types, settingsSchema, nowFor, add, iso, finish } from "./core";
 import { enqueue, executeOne } from "./queue";
 import { generateSports, monitorSports, reviewSports } from "./sports";
 import { consumePipeline, monitorBus } from "./bus";
+import { ensureNextCollegeAveBreakMarket } from "../bus-showcase";
 import { randomUUID } from "node:crypto";
 
 export async function configure(
@@ -36,6 +37,9 @@ export async function reconcileAutomation(
   });
   for (const env of envs) {
     const at = await nowFor(env.id);
+    // The successor market is created by the existing worker, never by the browser.
+    // A persisted retry state makes empty/all-arrived feeds wait ten minutes.
+    if (env.kind === "LIVE") await ensureNextCollegeAveBreakMarket(env.id);
     const configs = await db.automationConfig.findMany({
       where: { environmentId: env.id },
     });

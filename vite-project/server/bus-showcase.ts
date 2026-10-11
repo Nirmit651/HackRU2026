@@ -1,7 +1,7 @@
 import { add, createAutomatedMarket, iso, nowFor, rule } from "./automation/core";
 import { meters } from "./automation/bus-state";
 import { db, ensure } from "./db";
-import { tripshotLive } from "./tripshot";
+import { selectNextEligibleArrival, tripshotLive } from "./tripshot";
 
 export const collegeAveStudentCenter = { id: "college-avenue-student-center", name: "College Avenue Student Center", latitude: 40.50073, longitude: -74.44866, sourceUrl: "https://rutgers.transloc.com/" };
 const CANDIDATE_FRESH_SECONDS = 90;
@@ -33,36 +33,44 @@ export function selectNextBusCandidate(latest: VehicleObservation[], history: Ve
   return candidates.sort((a, b) => a.etaSeconds - b.etaSeconds || a.vehicleId.localeCompare(b.vehicleId))[0] ?? null;
 }
 
-/** Creates a single idempotent live market, using the teammate's persisted observation pipeline. */
-export async function createBusShowcase() {
-  const environment = await db.environment.findFirst({ where: { kind: "LIVE" }, orderBy: { createdAt: "desc" } });
+const RETRY_KEY = "tripshot-college-ave:retry", RETRY_SECONDS = 600, DWELL_SECONDS = 600;
+async function deferNextMarket(environmentId: string, at: Date, reason: string) {
+  const retryAt = add(at, RETRY_SECONDS);
+  await db.automationState.upsert({
+    where: { environmentId_key: { environmentId, key: RETRY_KEY } },
+    create: { environmentId, key: RETRY_KEY, kind: "BUS_NEXT_RETRY", data: { retryAt: iso(retryAt), reason } },
+    update: { data: { retryAt: iso(retryAt), reason }, version: { increment: 1 } },
+  });
+  return retryAt;
+}
+
+/** Ensures exactly one frozen, eligible College Ave TripShot market is active. */
+export async function ensureNextCollegeAveBreakMarket(environmentId?: string) {
+  const environment = environmentId
+    ? await db.environment.findUniqueOrThrow({ where: { id: environmentId } })
+    : await db.environment.findFirst({ where: { kind: "LIVE" }, orderBy: { createdAt: "desc" } });
   ensure(environment, "LIVE_ENVIRONMENT_NOT_FOUND", 404);
-  // Replay before consulting the feed: an already-frozen active market remains the answer.
-  const existing = await db.market.findFirst({ where: { environmentId: environment.id, generatorKey: { startsWith: "bus-showcase:" }, status: { in: ["DRAFT", "OPEN", "PAUSED", "CLOSED"] } }, orderBy: { createdAt: "desc" } });
+  const existing = await db.market.findFirst({ where: { environmentId: environment.id, generatorKey: { startsWith: "tripshot-college-ave:" }, status: { in: ["DRAFT", "OPEN", "PAUSED", "CLOSED"] } }, orderBy: { createdAt: "desc" } });
   if (existing) return { ...existing, creationReplayed: true };
   const at = await nowFor(environment.id);
-  // Prediction, rather than proximity, determines the next bus.  This is the
-  // only selection path for the live market; the legacy RUBus query below is
-  // retained for its exported historical test helper, not used here.
+  const retry = await db.automationState.findUnique({ where: { environmentId_key: { environmentId: environment.id, key: RETRY_KEY } } });
+  const retryAt = (retry?.data as { retryAt?: string } | undefined)?.retryAt;
+  if (retryAt && at < new Date(retryAt)) return null;
   const live = await tripshotLive();
-  ensure(!live.stale && live.nextArrival, "NO_LIVE_ARRIVAL_PREDICTION", 503);
-  const predicted = live.nextArrival;
-  const targetStops = live.targetStops;
-  ensure(targetStops.length > 0, "COLLEGE_AVE_STOP_NOT_FOUND", 503);
-  const selectedStop = targetStops.find((stop) => stop.id === predicted.stopId) ?? targetStops[0];
-  const selected = {
-    vehicleId: predicted.vehicleId ?? `trip:${predicted.tripId}`,
-    routeId: predicted.routeId,
-    tripId: predicted.tripId,
-    predictedArrival: predicted.arrivalAt,
-    stop: selectedStop,
-  };
+  if (live.stale) { await deferNextMarket(environment.id, at, "STALE_TRIPSHOT_FEED"); return null; }
+  const candidate = selectNextEligibleArrival(live);
+  if (!candidate) { await deferNextMarket(environment.id, at, "NO_ELIGIBLE_BUS_OUTSIDE_STUDENT_CENTER"); return null; }
+  const selected = { vehicleId: candidate.vehicle.id, routeId: candidate.arrival.routeId, tripId: candidate.arrival.tripId, predictedArrival: candidate.arrival.arrivalAt, stop: candidate.stop };
   const duplicate = await db.market.findFirst({ where: { environmentId: environment.id, category: "BUS_ARRIVAL", status: { in: ["DRAFT", "OPEN", "PAUSED", "CLOSED"] }, context: { path: ["tripId"], equals: selected.tripId } }, orderBy: { createdAt: "desc" } });
   if (duplicate) return { ...duplicate, creationReplayed: true };
-  const closesAt = new Date(Math.max(+at + 60_000, +new Date(selected.predictedArrival) - 60_000));
-  const target = add(new Date(selected.predictedArrival), 300), voidAfter = add(target, 15 * 60), eventId = `${selected.tripId}:${selected.stop.id}`;
-  const stops = targetStops.map((stop) => ({ ...stop, sourceUrl: "https://rutgers.tripshot.com/" }));
-  const settings = { kind: "next_bus_break", sourceSystem: "tripshot", vehicleId: selected.vehicleId, routeId: selected.routeId, tripId: selected.tripId, stop: { ...selected.stop, sourceUrl: "https://rutgers.tripshot.com/" }, stops, opensAt: iso(at), closesAt: iso(closesAt), voidAfter: iso(voidAfter), enterMeters: 65, exitMeters: 75, maxGapSeconds: 45, latenessSeconds: 30, durationSeconds: 300, selectedAt: iso(at), predictedArrival: selected.predictedArrival, feedTimestamp: predicted.feedTimestamp, algorithm: "tripshot-next-college-ave-dwell-v2", algorithmVersion: 2 };
-  const condition = "YES: the selected bus arrives within the College Avenue Student Center stop radius and remains stationary there for at least 5 continuous minutes. NO: the selected bus arrives, then clearly leaves before 5 minutes. VOID: vehicle/trip identity changes, data becomes stale, there is an excessive data gap, the bus disappears, or the evidence is otherwise insufficient.";
-  return createAutomatedMarket({ environmentId: environment.id, generatorKey: `tripshot-college-ave:${selected.tripId}:${selected.stop.id}`, templateVersion: 2, slug: `tripshot-college-ave-${eventId.replace(/[^a-z0-9]/gi, "").slice(0, 18).toLowerCase()}`, title: "Will the next bus to arrive at College Avenue Student Center remain stopped for at least 5 minutes?", description: condition, category: "BUS_ARRIVAL", opensAt: iso(at), closesAt: iso(closesAt), expectedResolutionAt: iso(target), resolutionRule: rule("bus", "TripShot GTFS-Realtime", eventId, closesAt, at, target, voidAfter, settings, condition), sourceUrl: "https://rutgers.tripshot.com/", context: { routeId: selected.routeId, vehicleId: selected.vehicleId, tripId: selected.tripId, stopId: selected.stop.id, stopIds: targetStops.map((stop) => stop.id), stopName: selected.stop.name, stop: selected.stop, destination: selected.stop.name, predictedArrival: selected.predictedArrival, feedTimestamp: predicted.feedTimestamp, evidenceSource: "TripShot GTFS + GTFS-Realtime", deadline: iso(target), dwellSeconds: 300 } });
+  const closesAt = add(new Date(selected.predictedArrival), 60 * 60), target = add(new Date(selected.predictedArrival), DWELL_SECONDS), voidAfter = add(closesAt, 15 * 60), eventId = `${selected.tripId}:${selected.stop.id}`;
+  const stop = { ...selected.stop, sourceUrl: "https://rutgers.tripshot.com/" };
+  const initialObservation = { provider: "tripshot", vehicleId: candidate.vehicle.id, tripId: candidate.vehicle.tripId, routeId: candidate.vehicle.routeId, sourceAt: candidate.vehicle.updatedAt, receivedAt: live.vehicleFeedAt, latitude: candidate.vehicle.latitude, longitude: candidate.vehicle.longitude };
+  const settings = { kind: "next_bus_break", sourceSystem: "tripshot", vehicleId: selected.vehicleId, routeId: selected.routeId, tripId: selected.tripId, stop, stops: [stop], opensAt: iso(at), closesAt: iso(closesAt), voidAfter: iso(voidAfter), enterMeters: 65, exitMeters: 75, anchorMeters: 25, maxGapSeconds: 45, latenessSeconds: 30, durationSeconds: DWELL_SECONDS, selectedAt: iso(at), predictedArrival: selected.predictedArrival, feedTimestamp: candidate.arrival.feedTimestamp, initialObservation, algorithm: "tripshot-next-college-ave-break-v3", algorithmVersion: 3 };
+  const condition = "YES if the frozen bus enters the College Avenue Student Center geofence and remains continuously there for 10 minutes. NO if it enters and confirmed departure occurs before 10 minutes. Trading closes at first entry. Stale, missing, conflicting, or identity-changing evidence VOIDs.";
+  const market = await createAutomatedMarket({ environmentId: environment.id, generatorKey: `tripshot-college-ave:${selected.tripId}:${selected.stop.id}`, templateVersion: 3, slug: `tripshot-college-ave-${eventId.replace(/[^a-z0-9]/gi, "").slice(0, 18).toLowerCase()}`, title: "Will the next bus to arrive at College Avenue Student Center take a break?", description: condition, category: "BUS_ARRIVAL", opensAt: iso(at), closesAt: iso(closesAt), expectedResolutionAt: iso(target), resolutionRule: rule("bus", "TripShot GTFS-Realtime", eventId, closesAt, at, target, voidAfter, settings, condition), sourceUrl: "https://rutgers.tripshot.com/", context: { routeId: selected.routeId, vehicleId: selected.vehicleId, tripId: selected.tripId, stopId: selected.stop.id, stopName: selected.stop.name, stop, destination: selected.stop.name, predictedArrival: selected.predictedArrival, feedTimestamp: candidate.arrival.feedTimestamp, evidenceSource: "TripShot GTFS + GTFS-Realtime", deadline: iso(target), dwellSeconds: DWELL_SECONDS } });
+  await db.automationState.delete({ where: { environmentId_key: { environmentId: environment.id, key: RETRY_KEY } } }).catch(() => {});
+  return market;
 }
+export const createBusShowcase = ensureNextCollegeAveBreakMarket;
+export async function deferCollegeAveBreakRetry(environmentId: string, at: Date, reason: string) { return deferNextMarket(environmentId, at, reason); }

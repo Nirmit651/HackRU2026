@@ -15,7 +15,7 @@ type Trip = { id: string; routeId: string; shapeId?: string };
 export type LiveVehicle = { id: string; routeId: string; tripId?: string; latitude: number; longitude: number; heading?: number; updatedAt: string };
 export type Arrival = { tripId: string; routeId: string; vehicleId?: string; arrivalAt: string; feedTimestamp: string; stopId: string };
 type StaticGtfs = { stops: Stop[]; routes: Map<string, Route>; trips: Map<string, Trip>; stopTimes: Map<string, { stopId: string; sequence: number }[]>; shapes: Map<string, [number, number][]>; collegeStops: Stop[] };
-export type LiveTransit = { vehicles: LiveVehicle[]; routes: Route[]; targetStops: Stop[]; nextArrival: Arrival | null; routeGeometry: [number, number][]; observedAt: string; tripFeedAt: string; vehicleFeedAt: string; stale: boolean };
+export type LiveTransit = { vehicles: LiveVehicle[]; routes: Route[]; targetStops: Stop[]; arrivals: Arrival[]; nextArrival: Arrival | null; routeGeometry: [number, number][]; observedAt: string; tripFeedAt: string; vehicleFeedAt: string; stale: boolean };
 export type FrozenTripSnapshot = Pick<LiveTransit, "observedAt" | "tripFeedAt" | "vehicleFeedAt" | "stale"> & { vehicle: LiveVehicle | null; routeGeometry: [number, number][] };
 
 let staticCache: { value: StaticGtfs; at: number } | undefined;
@@ -62,12 +62,28 @@ async function staticGtfs() {
   return refreshStatic;
 }
 const seconds = (v: unknown) => typeof v === "number" ? v : Number(v ?? 0);
-export function selectNextArrival(entities: any[], targetIds: Set<string>, trips: Map<string, Trip>, now = Date.now(), feedAt = new Date().toISOString()): Arrival | null {
+export function selectArrivalCandidates(entities: any[], targetIds: Set<string>, trips: Map<string, Trip>, now = Date.now(), feedAt = new Date().toISOString()): Arrival[] {
   const candidates: Arrival[] = [];
   for (const entity of entities) { const update = entity.tripUpdate; if (!update || update.trip?.scheduleRelationship === 3 || update.trip?.scheduleRelationship === 2) continue; const tripId = update.trip?.tripId; const trip = trips.get(tripId); if (!trip) continue;
     for (const stop of update.stopTimeUpdate ?? []) { if (!targetIds.has(stop.stopId) || stop.scheduleRelationship === 1) continue; const at = seconds(stop.arrival?.time ?? stop.departure?.time) * 1000; if (at > now && at - now < 4 * 60 * 60_000) candidates.push({ tripId, routeId: update.trip.routeId || trip.routeId, vehicleId: update.vehicle?.id || undefined, arrivalAt: new Date(at).toISOString(), feedTimestamp: feedAt, stopId: stop.stopId }); }
   }
-  return candidates.sort((a, b) => +new Date(a.arrivalAt) - +new Date(b.arrivalAt))[0] ?? null;
+  return candidates.sort((a, b) => +new Date(a.arrivalAt) - +new Date(b.arrivalAt));
+}
+export function selectNextArrival(entities: any[], targetIds: Set<string>, trips: Map<string, Trip>, now = Date.now(), feedAt = new Date().toISOString()): Arrival | null {
+  return selectArrivalCandidates(entities, targetIds, trips, now, feedAt)[0] ?? null;
+}
+const meters = (a: Stop, b: LiveVehicle) => {
+  const rad = Math.PI / 180, dlat = (b.latitude - a.latitude) * rad, dlon = (b.longitude - a.longitude) * rad;
+  const x = Math.sin(dlat / 2) ** 2 + Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin(dlon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+};
+export function selectNextEligibleArrival(live: LiveTransit, enterMeters = 65) {
+  for (const arrival of live.arrivals) {
+    const stop = live.targetStops.find((candidate) => candidate.id === arrival.stopId);
+    const vehicle = live.vehicles.find((candidate) => (arrival.vehicleId ? candidate.id === arrival.vehicleId : candidate.tripId === arrival.tripId));
+    if (stop && vehicle && meters(stop, vehicle) > enterMeters) return { arrival, stop, vehicle };
+  }
+  return null;
 }
 async function live(): Promise<LiveTransit> {
   if (realtimeCache && Date.now() - realtimeCache.at < REALTIME_TTL_MS) return realtimeCache.value;
@@ -77,12 +93,13 @@ async function live(): Promise<LiveTransit> {
     const [gtfs, tripsRaw, vehiclesRaw] = await Promise.all([staticGtfs(), fetchBytes(TRIPS_URL), fetchBytes(VEHICLES_URL)]);
     const tripFeed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(tripsRaw), vehicleFeed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(vehiclesRaw);
     const tripFeedAt = new Date(seconds((tripFeed.header as any)?.timestamp) * 1000 || Date.now()).toISOString(), vehicleFeedAt = new Date(seconds((vehicleFeed.header as any)?.timestamp) * 1000 || Date.now()).toISOString();
-    const arrival = selectNextArrival((tripFeed as any).entity ?? [], new Set(gtfs.collegeStops.map((s) => s.id)), gtfs.trips, Date.now(), tripFeedAt);
+    const arrivals = selectArrivalCandidates((tripFeed as any).entity ?? [], new Set(gtfs.collegeStops.map((s) => s.id)), gtfs.trips, Date.now(), tripFeedAt);
+    const arrival = arrivals[0] ?? null;
     const vehicles: LiveVehicle[] = ((vehicleFeed as any).entity ?? []).flatMap((e: any) => { const v = e.vehicle, p = v?.position, trip = gtfs.trips.get(v?.trip?.tripId); if (!v?.vehicle?.id || !Number.isFinite(p?.latitude) || !Number.isFinite(p?.longitude)) return []; return [{ id: v.vehicle.id, routeId: v.trip?.routeId || trip?.routeId || "Unknown", tripId: v.trip?.tripId || undefined, latitude: p.latitude, longitude: p.longitude, heading: p.bearing || undefined, updatedAt: new Date(seconds(v.timestamp) * 1000 || Date.now()).toISOString() }]; });
     const tracked = arrival && vehicles.find((v) => (arrival.vehicleId && v.id === arrival.vehicleId) || v.tripId === arrival.tripId);
     if (arrival && tracked && !arrival.vehicleId) arrival.vehicleId = tracked.id;
     const selectedTrip = arrival ? gtfs.trips.get(arrival.tripId) : undefined, routeGeometry = selectedTrip?.shapeId ? gtfs.shapes.get(selectedTrip.shapeId) ?? [] : [];
-    const observedAt = vehicleFeedAt, value = { vehicles, routes: [...gtfs.routes.values()], targetStops: gtfs.collegeStops, nextArrival: arrival, routeGeometry, observedAt, tripFeedAt, vehicleFeedAt, stale: Date.now() - Math.min(+new Date(tripFeedAt), +new Date(vehicleFeedAt)) > STALE_MS };
+    const observedAt = vehicleFeedAt, value = { vehicles, routes: [...gtfs.routes.values()], targetStops: gtfs.collegeStops, arrivals, nextArrival: arrival, routeGeometry, observedAt, tripFeedAt, vehicleFeedAt, stale: Date.now() - Math.min(+new Date(tripFeedAt), +new Date(vehicleFeedAt)) > STALE_MS };
     realtimeCache = { value, at: Date.now() }; return value;
   })().finally(() => { refreshRealtime = undefined; });
   return refreshRealtime;
@@ -92,7 +109,7 @@ export const tripshotLive = live;
 /** Reads the shared live cache but renders only the vehicle/trip frozen into a market. */
 export async function tripshotFrozenTrip(tripId: string, vehicleId: string): Promise<FrozenTripSnapshot> {
   const [value, gtfs] = await Promise.all([live(), staticGtfs()]);
-  const vehicle = value.vehicles.find((candidate) => candidate.id === vehicleId || candidate.tripId === tripId) ?? null;
+  const vehicle = value.vehicles.find((candidate) => vehicleId.startsWith("trip:") ? candidate.tripId === tripId : candidate.id === vehicleId) ?? null;
   const trip = gtfs.trips.get(tripId);
   return {
     vehicle,

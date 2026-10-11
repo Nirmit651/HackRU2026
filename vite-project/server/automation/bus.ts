@@ -20,6 +20,8 @@ import {
   type Telemetry,
   type Visit,
 } from "./bus-state";
+import { tripshotFrozenTrip } from "../tripshot";
+import { deferCollegeAveBreakRetry } from "../bus-showcase";
 
 const DECISION_WINDOW_SECONDS = 30;
 type ScheduledObservation = Telemetry;
@@ -389,34 +391,41 @@ export async function monitorBus(m: Market) {
   return add(at, 10);
 }
 export async function monitorNextBusBreak(m: Market, settings: Record<string, unknown>, at: Date) {
-  const rows = await db.$queryRaw<{
-    source_system: string; vehicle_id: string; source_measured_at: Date; retrieved_at: Date;
-    latitude: number; longitude: number; route_id: string | null; source_observation_id: string | null;
-  }[]>`
-    SELECT source_system,vehicle_id,source_measured_at,retrieved_at,latitude,longitude,route_id,source_observation_id
-    FROM public.bus_observations
-    WHERE source_system=${String(settings.sourceSystem)} AND vehicle_id=${String(settings.vehicleId)}
-      AND is_valid AND observation_kind='vehicle_position' AND measurement_time_basis='source'
-      AND source_measured_at >= ${new Date(String(settings.opensAt))} AND source_measured_at <= ${at}
-      AND latitude IS NOT NULL AND longitude IS NOT NULL
-    ORDER BY source_measured_at,id`;
-  const observations = rows.map((row) => ({ provider: row.source_system, vehicleId: row.vehicle_id, sourceAt: iso(row.source_measured_at), receivedAt: iso(row.retrieved_at), latitude: row.latitude, longitude: row.longitude, routeId: row.route_id, sequenceId: row.source_observation_id ?? undefined }))
-    .filter((row, index, all) => index === 0 || row.sourceAt !== all[index - 1].sourceAt || row.latitude !== all[index - 1].latitude || row.longitude !== all[index - 1].longitude || row.routeId !== all[index - 1].routeId);
-  const latest = observations.at(-1);
-  if ((!latest || +at - +new Date(latest.sourceAt) > (Number(settings.maxGapSeconds) + Number(settings.latenessSeconds)) * 1000) && m.status === "OPEN") {
-    try { await lifecycle(m.id, "PAUSED"); } catch { /* concurrent transition is harmless */ }
+  const pause = async () => { if (m.status === "OPEN") try { await lifecycle(m.id, "PAUSED"); } catch { /* concurrent transition is harmless */ } };
+  const voidMarket = async (reason: string) => {
+    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at);
+    await deferCollegeAveBreakRetry(m.environmentId, at, reason);
+  };
+  let live: Awaited<ReturnType<typeof tripshotFrozenTrip>>;
+  try { live = await tripshotFrozenTrip(String(settings.tripId), String(settings.vehicleId)); }
+  catch { await pause(); if (at >= new Date(String(settings.voidAfter))) await voidMarket("TRIPSHOT_UNAVAILABLE"); return add(at, 10); }
+  if (live.stale || !live.vehicle || live.vehicle.routeId !== String(settings.routeId) || (live.vehicle.tripId && live.vehicle.tripId !== String(settings.tripId))) {
+    await pause();
+    if (at >= new Date(String(settings.voidAfter))) await voidMarket(live.stale ? "STALE_TRIPSHOT_EVIDENCE" : "MISSING_OR_IDENTITY_CHANGED_VEHICLE");
+    return add(at, 10);
   }
-  const result = evaluateNextBusBreak({ routeId: String(settings.routeId), stop: settings.stop as { latitude: number; longitude: number }, opensAt: String(settings.opensAt) }, observations, { enterMeters: Number(settings.enterMeters), exitMeters: Number(settings.exitMeters), maxGapSeconds: Number(settings.maxGapSeconds), latenessSeconds: Number(settings.latenessSeconds), durationSeconds: Number(settings.durationSeconds) });
-  if (result && "result" in result) {
-    await finish(m, { units: "boolean", result: result.result }, { algorithm: settings.algorithm, reason: result.reason, arrival: result.arrival, observation: result.observation, frozen: settings }, new Date(result.observation.sourceAt));
+  const observation: Telemetry = { provider: "tripshot", vehicleId: live.vehicle.id, tripId: live.vehicle.tripId, routeId: live.vehicle.routeId, sourceAt: live.vehicle.updatedAt, receivedAt: live.vehicleFeedAt, latitude: live.vehicle.latitude, longitude: live.vehicle.longitude };
+  const policy = settingsSchema.parse({ sourceSystem: "tripshot", sourceVerifiedLive: true, enterMeters: Number(settings.enterMeters), exitMeters: Number(settings.exitMeters), anchorMeters: Number(settings.anchorMeters ?? 25), maxGapSeconds: Number(settings.maxGapSeconds), latenessSeconds: Number(settings.latenessSeconds), durationSeconds: 600, stops: [settings.stop] });
+  const stateKey = `next-bus-break:${m.id}`;
+  const previous = (await db.automationState.findUnique({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } } }))?.data as unknown as Visit | undefined;
+  const seed = settings.initialObservation as Telemetry | undefined;
+  const initial = seed ? { ...emptyVisit(), state: "OUTSIDE" as const, reason: undefined, last: seed } : emptyVisit();
+  const visit = advanceVisit(previous ?? initial, observation, policy, at);
+  await db.automationState.upsert({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } }, create: { environmentId: m.environmentId, key: stateKey, kind: "BUS_TRIPSHOT_VISIT", data: visit as never }, update: { data: visit as never, version: { increment: 1 } } });
+  if (visit.state === "UNCERTAIN") await pause();
+  else if (m.status === "PAUSED" && meters(settings.stop as { latitude: number; longitude: number }, observation) > Number(settings.enterMeters)) {
+    try { await lifecycle(m.id, "OPEN"); } catch { /* terminal transition is harmless */ }
+  }
+  if (meters(settings.stop as { latitude: number; longitude: number }, observation) <= Number(settings.enterMeters)) await close(m);
+  if (visit.state === "ENDED") {
+    await finish(m, { units: "boolean", result: false }, { algorithm: settings.algorithm, reason: "CONFIRMED_DEPARTURE_BEFORE_10_MINUTES", visit, frozen: settings }, new Date(observation.sourceAt));
     return;
   }
-  // First entry freezes trading even while the ten-minute evidence window is pending.
-  if (observations.some((row) => meters(settings.stop as { latitude: number; longitude: number }, row) <= Number(settings.enterMeters))) await close(m);
-  if (at >= new Date(String(settings.voidAfter))) {
-    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason: result && "void" in result ? result.void : "INSUFFICIENT_CONTINUOUS_EVIDENCE", frozen: settings }, at);
+  if (visit.state === "QUALIFIED") {
+    await finish(m, { units: "boolean", result: true }, { algorithm: settings.algorithm, reason: "CONTINUOUS_GEOFENCE_DWELL_FOR_10_MINUTES", visit, frozen: settings }, new Date(observation.sourceAt));
     return;
   }
+  if (at >= new Date(String(settings.voidAfter))) { await voidMarket("INSUFFICIENT_CONTINUOUS_EVIDENCE"); return; }
   return add(at, 10);
 }
 export async function monitorScheduledBus(m: Market, settings: Record<string, unknown>, at: Date) {
