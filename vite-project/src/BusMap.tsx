@@ -49,15 +49,15 @@ function setSource(map: mapboxgl.Map, id: string, data: FeatureCollection) {
 }
 
 export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: { marketId: string; accessToken: string | null; routeId: string; stopName: string; deadline: string }) {
-  const host = useRef<HTMLDivElement>(null), mapRef = useRef<mapboxgl.Map | null>(null), positionRef = useRef<LngLat | null>(null), animationRef = useRef<number | null>(null), fittedRef = useRef(false), [snapshot, setSnapshot] = useState<BusSnapshot | null>(null), [ready, setReady] = useState(false), [failed, setFailed] = useState(false), [selectedRoute, setSelectedRoute] = useState<string | undefined>();
+  const host = useRef<HTMLDivElement>(null), mapRef = useRef<mapboxgl.Map | null>(null), positionRef = useRef<LngLat | null>(null), animationRef = useRef<number | null>(null), fittedRef = useRef(false), [snapshot, setSnapshot] = useState<BusSnapshot | null>(null), [ready, setReady] = useState(false), [failed, setFailed] = useState(false), [selectedRoute, setSelectedRoute] = useState<string | undefined>(), [serverOffset, setServerOffset] = useState(0), [nowMs, setNowMs] = useState(Date.now());
 
   useEffect(() => {
     let stopped = false;
     const load = () => request<{ snapshot: BusSnapshot | null }>(`/markets/${marketId}/bus`).then((result) => {
-      if (!stopped) { setSnapshot(result.snapshot); setFailed(!result.snapshot); }
+      if (!stopped) { setSnapshot(result.snapshot); setFailed(!result.snapshot); if (result.snapshot?.serverNow) setServerOffset(Date.parse(result.snapshot.serverNow) - Date.now()); }
     }).catch(() => { if (!stopped) setFailed(true); });
     void load();
-    const timer = setInterval(load, 5000);
+    const timer = setInterval(load, 15000);
     return () => { stopped = true; clearInterval(timer); };
   }, [marketId]);
 
@@ -112,11 +112,21 @@ export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: {
     tick(startedAt);
   }, [ready, snapshot, selectedRoute]);
 
+  useEffect(() => {
+    if (!snapshot?.dwellDeadline) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [snapshot?.dwellDeadline]);
+  const remaining = snapshot?.dwellDeadline ? Math.max(0, Date.parse(snapshot.dwellDeadline) - (nowMs + serverOffset)) : null;
+  const countdown = remaining === null ? null : `${Math.floor(remaining / 60000)}:${String(Math.floor(remaining / 1000) % 60).padStart(2, "0")}`;
+
   return <section className="bus-panel" aria-label={`Route ${routeId} map`}>
     <div className="bus-panel-heading"><div><span className="section-label">Route {routeId} · {stopName}</span><h2>Bus route</h2></div><div className="bus-status">{failed ? "Live feed unavailable" : snapshot?.isSimulated ? "SIMULATED · recorded scenario" : snapshot && snapshot.vehicles.length === 0 ? "Selected vehicle unavailable" : snapshot && Date.now() - Date.parse(snapshot.observedAt) > 30000 ? "Stale vehicle data" : "Live vehicle data"}</div></div>
     <p className="bus-panel-copy">{snapshot?.predictedArrival ? `Predicted arrival ${date(snapshot.predictedArrival)} · ` : ""}Follow the actual GTFS route shape to the target stop. {snapshot?.geofenceEnterMeters ? `The shaded circle is the ${snapshot.geofenceEnterMeters} m arrival geofence${snapshot.geofenceExitMeters ? `; the dashed ${snapshot.geofenceExitMeters} m ring confirms departure` : ""}. ` : ""}Deadline {date(deadline)}.</p>
+    <div className="bus-tracking-status"><strong>{snapshot?.phase === "DWELLING" ? "Bus arrived — dwell timer running" : snapshot?.phase === "ARRIVED" ? "Arrival being confirmed" : snapshot?.phase === "UNCERTAIN" ? "Waiting for reliable observation" : snapshot?.phase === "RESOLVED" ? "Market evidence complete" : "Tracking approach"}</strong>{countdown !== null && <span>{countdown} remaining</span>}</div>
     {!!snapshot?.activeRoutes?.length && <div className="route-chips" aria-label="Active routes">{snapshot.activeRoutes.map((active) => <button key={active} className={selectedRoute === active ? "active" : ""} onClick={() => setSelectedRoute(selectedRoute === active ? undefined : active)}>{active}</button>)}</div>}
     {accessToken ? <div ref={host} className="map" /> : <div className="map-empty">Mapbox is not configured.</div>}
+    <div className="bus-map-legend"><span><i className="entry" />65 m arrival geofence</span><span><i className="exit" />75 m exit boundary</span></div>
     <small>{snapshot ? snapshot.vehicles.length ? `${snapshot.source} · vehicles ${date(snapshot.vehicleFeedAt ?? snapshot.observedAt)} · predictions ${date(snapshot.tripFeedAt ?? snapshot.observedAt)}` : "The frozen vehicle is not currently present in the live feed; no replacement bus is shown." : "No live arrival prediction is available."}</small>
   </section>;
 }

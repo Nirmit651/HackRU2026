@@ -47,32 +47,43 @@ export async function busSnapshot(
   if (automation?.type === "bus") {
     const settings = automation.settings;
     if (settings.sourceSystem === "tripshot") {
-      try {
-        const live = await tripshotFrozenTrip(String(settings.tripId), String(settings.vehicleId));
-        return {
-          source: "TripShot GTFS + GTFS-Realtime",
-          isSimulated: false,
-          observedAt: live.observedAt,
-          receivedAt: live.vehicleFeedAt,
-          vehicles: live.vehicle ? [{ id: live.vehicle.id, routeId: live.vehicle.routeId, latitude: live.vehicle.latitude, longitude: live.vehicle.longitude, heading: live.vehicle.heading, updatedAt: live.vehicle.updatedAt }] : [],
-          stops: [settings.stop as BusSnapshot["stops"][number]],
-          routeGeometry: live.routeGeometry,
-          etaSeconds: settings.predictedArrival ? Math.max(0, Math.round((+new Date(String(settings.predictedArrival)) - Date.now()) / 1000)) : undefined,
-          activeRoutes: [String(settings.routeId)],
-          trackedVehicleId: live.vehicle?.id ?? null,
-          selectedRouteId: String(settings.routeId),
-          predictedArrival: String(settings.predictedArrival ?? "") || null,
-          tripFeedAt: live.tripFeedAt,
-          vehicleFeedAt: live.vehicleFeedAt,
-          stale: live.stale,
-          geofenceEnterMeters: Number(settings.enterMeters),
-          geofenceExitMeters: Number(settings.exitMeters),
-        } as BusSnapshot;
-      } catch (error) {
-        // Keep upstream details server-side, but make a null snapshot diagnosable.
-        console.warn("TripShot bus snapshot unavailable", error instanceof Error ? error.message : error);
-        return null;
-      }
+      // The worker owns TripShot polling. Browser requests read its persisted
+      // snapshot so multiple viewers cannot multiply upstream feed requests.
+      const row = await db.automationState.findUnique({
+        where: { environmentId_key: { environmentId: env.id, key: `bus-snapshot:${market.id}` } },
+      });
+      const cached = row?.data as {
+        phase?: BusSnapshot["phase"];
+        serverNow?: string;
+        visit?: Visit | null;
+        live?: Awaited<ReturnType<typeof tripshotFrozenTrip>> | null;
+      } | undefined;
+      const live = cached?.live;
+      if (!live) return null;
+      const arrivalConfirmedAt = cached?.visit?.confirmedAt ?? null;
+      return {
+        source: "TripShot GTFS + GTFS-Realtime",
+        isSimulated: false,
+        observedAt: live.observedAt,
+        receivedAt: live.vehicleFeedAt,
+        vehicles: live.vehicle ? [{ id: live.vehicle.id, routeId: live.vehicle.routeId, latitude: live.vehicle.latitude, longitude: live.vehicle.longitude, heading: live.vehicle.heading, updatedAt: live.vehicle.updatedAt }] : [],
+        stops: [settings.stop as BusSnapshot["stops"][number]],
+        routeGeometry: live.routeGeometry,
+        etaSeconds: settings.predictedArrival ? Math.max(0, Math.round((+new Date(String(settings.predictedArrival)) - Date.now()) / 1000)) : undefined,
+        activeRoutes: [String(settings.routeId)],
+        trackedVehicleId: live.vehicle?.id ?? null,
+        selectedRouteId: String(settings.routeId),
+        predictedArrival: String(settings.predictedArrival ?? "") || null,
+        tripFeedAt: live.tripFeedAt,
+        vehicleFeedAt: live.vehicleFeedAt,
+        stale: live.stale,
+        geofenceEnterMeters: Number(settings.enterMeters),
+        geofenceExitMeters: Number(settings.exitMeters),
+        phase: cached?.phase,
+        arrivalConfirmedAt,
+        dwellDeadline: arrivalConfirmedAt ? new Date(+new Date(arrivalConfirmedAt) + Number(settings.durationSeconds ?? 600) * 1000).toISOString() : null,
+        serverNow: cached?.serverNow,
+      };
     }
     if (
       settings.kind === "arrival_by_deadline" ||

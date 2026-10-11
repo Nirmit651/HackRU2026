@@ -26,3 +26,4 @@ dist-ssr
 .vercel
 .vercel-api
 tiger/*credentials*
+.env*

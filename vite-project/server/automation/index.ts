@@ -165,6 +165,14 @@ export async function handleJob(job: AutomationJob): Promise<Date | void> {
     visitId?: string;
     expectedVersion?: number;
   };
+  if (job.kind === "COORDINATE_BUS") {
+    const environmentId = job.environmentId;
+    const market = await ensureNextCollegeAveBreakMarket(environmentId);
+    if (market) await enqueue(environmentId, `monitor:${market.id}`, "MONITOR", { marketId: market.id }, await nowFor(environmentId));
+    // Cron owns the minute-scale wake-up. Returning no next run prevents an
+    // idle job from competing with the coordinator between cron invocations.
+    return;
+  }
   if (job.kind === "GENERATE") {
     const c = await db.automationConfig.findUniqueOrThrow({
         where: { id: payload.configId },

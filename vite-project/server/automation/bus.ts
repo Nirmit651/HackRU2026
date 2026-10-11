@@ -33,6 +33,18 @@ type BreakEvaluation =
   | { void: string }
   | null;
 
+export function nextBusPollSeconds(
+  at: Date,
+  predictedArrival: string | undefined,
+  phase: "APPROACHING" | "ARRIVED" | "DWELLING" | "UNCERTAIN",
+  settings: Record<string, unknown>,
+) {
+  const etaSeconds = predictedArrival ? Math.max(0, (+new Date(predictedArrival) - +at) / 1000) : Infinity;
+  if (phase === "DWELLING" || phase === "ARRIVED") return Number(settings.nearPollSeconds ?? 5);
+  if (etaSeconds <= 180) return Number(settings.approachingPollSeconds ?? 15);
+  return Number(settings.farPollSeconds ?? 60);
+}
+
 function scheduledInvalid(
   rows: ScheduledObservation[],
   settings: { maxGapSeconds: number; latenessSeconds: number },
@@ -391,13 +403,25 @@ export async function monitorBus(m: Market) {
   return add(at, 10);
 }
 export async function monitorNextBusBreak(m: Market, settings: Record<string, unknown>, at: Date) {
+  const stateKey = `next-bus-break:${m.id}`;
+  const previous = (await db.automationState.findUnique({
+    where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } },
+  }))?.data as unknown as Visit | undefined;
+  const polling = (phase: "APPROACHING" | "ARRIVED" | "DWELLING" | "UNCERTAIN") => nextBusPollSeconds(at, typeof settings.predictedArrival === "string" ? settings.predictedArrival : undefined, phase, settings);
+  const persistSnapshot = async (value: Visit | undefined, live?: Awaited<ReturnType<typeof tripshotFrozenTrip>>) => {
+    const phase = value?.state === "DWELLING" ? "DWELLING" : value?.state === "QUALIFIED" || value?.state === "ENDED" ? "RESOLVED" : value?.state === "UNCERTAIN" ? "UNCERTAIN" : value?.state === "ARRIVAL_CANDIDATE" ? "ARRIVED" : "APPROACHING";
+    await db.automationState.upsert({
+      where: { environmentId_key: { environmentId: m.environmentId, key: `bus-snapshot:${m.id}` } },
+      create: { environmentId: m.environmentId, key: `bus-snapshot:${m.id}`, kind: "BUS_MARKET_SNAPSHOT", data: { phase, serverNow: iso(at), visit: value ?? null, live: live ?? null } as never },
+      update: { data: { phase, serverNow: iso(at), visit: value ?? null, live: live ?? null } as never, version: { increment: 1 } },
+    });
+    return phase;
+  };
   const pause = async () => { if (m.status === "OPEN") try { await lifecycle(m.id, "PAUSED"); } catch { /* concurrent transition is harmless */ } };
   const voidMarket = async (reason: string, allowEarlyVoid = false) => {
     await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason, frozen: settings }, at, { allowEarlyVoid });
     await deferCollegeAveBreakRetry(m.environmentId, at, reason);
   };
-  const stateKey = `next-bus-break:${m.id}`;
-  const previous = (await db.automationState.findUnique({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } } }))?.data as unknown as Visit | undefined;
   const staleGraceMs = (Number(settings.maxGapSeconds) + Number(settings.latenessSeconds)) * 1000;
   const latestEvidenceAt = () => previous?.last?.sourceAt ?? (settings.initialObservation as Telemetry | undefined)?.sourceAt ?? String(settings.selectedAt);
   const staleTooLong = () => {
@@ -415,15 +439,17 @@ export async function monitorNextBusBreak(m: Market, settings: Record<string, un
   try { live = await tripshotFrozenTrip(String(settings.tripId), String(settings.vehicleId)); }
   catch {
     await pause();
+    await persistSnapshot(undefined);
     if (staleTooLong()) await voidMarket("MISSING_FROZEN_VEHICLE_AFTER_STALENESS_GRACE", true);
     else if (at >= new Date(String(settings.voidAfter))) await voidMarket("TRIPSHOT_UNAVAILABLE");
-    return add(at, 10);
+    return add(at, polling("UNCERTAIN"));
   }
   if (live.stale || !live.vehicle || live.vehicle.routeId !== String(settings.routeId) || (live.vehicle.tripId && live.vehicle.tripId !== String(settings.tripId))) {
     await pause();
+    await persistSnapshot(undefined, live);
     if (staleTooLong()) await voidMarket(live.stale ? "STALE_EVIDENCE_AFTER_STALENESS_GRACE" : "MISSING_FROZEN_VEHICLE_AFTER_STALENESS_GRACE", true);
     else if (at >= new Date(String(settings.voidAfter))) await voidMarket(live.stale ? "STALE_TRIPSHOT_EVIDENCE" : "MISSING_OR_IDENTITY_CHANGED_VEHICLE");
-    return add(at, 10);
+    return add(at, polling("UNCERTAIN"));
   }
   const observation: Telemetry = { provider: "tripshot", vehicleId: live.vehicle.id, tripId: live.vehicle.tripId, routeId: live.vehicle.routeId, sourceAt: live.vehicle.updatedAt, receivedAt: live.vehicleFeedAt, latitude: live.vehicle.latitude, longitude: live.vehicle.longitude };
   const policy = settingsSchema.parse({ sourceSystem: "tripshot", sourceVerifiedLive: true, enterMeters: Number(settings.enterMeters), exitMeters: Number(settings.exitMeters), anchorMeters: Number(settings.anchorMeters ?? 25), maxGapSeconds: Number(settings.maxGapSeconds), latenessSeconds: Number(settings.latenessSeconds), durationSeconds: 600, stops: [settings.stop] });
@@ -431,6 +457,7 @@ export async function monitorNextBusBreak(m: Market, settings: Record<string, un
   const initial = seed ? { ...emptyVisit(), state: "OUTSIDE" as const, reason: undefined, last: seed } : emptyVisit();
   const visit = advanceVisit(previous ?? initial, observation, policy, at);
   await db.automationState.upsert({ where: { environmentId_key: { environmentId: m.environmentId, key: stateKey } }, create: { environmentId: m.environmentId, key: stateKey, kind: "BUS_TRIPSHOT_VISIT", data: visit as never }, update: { data: visit as never, version: { increment: 1 } } });
+  const phase = await persistSnapshot(visit, live);
   if (visit.state === "UNCERTAIN") await pause();
   else if (m.status === "PAUSED" && meters(settings.stop as { latitude: number; longitude: number }, observation) > Number(settings.enterMeters)) {
     try { await lifecycle(m.id, "OPEN"); } catch { /* terminal transition is harmless */ }
@@ -445,7 +472,7 @@ export async function monitorNextBusBreak(m: Market, settings: Record<string, un
     return;
   }
   if (at >= new Date(String(settings.voidAfter))) { await voidMarket("INSUFFICIENT_CONTINUOUS_EVIDENCE"); return; }
-  return add(at, 10);
+  return add(at, polling(phase === "ARRIVED" ? "ARRIVED" : phase === "DWELLING" ? "DWELLING" : phase === "UNCERTAIN" ? "UNCERTAIN" : "APPROACHING"));
 }
 export async function monitorScheduledBus(m: Market, settings: Record<string, unknown>, at: Date) {
   const kind = settings.kind as "arrival_by_deadline" | "presence_at_time";

@@ -35,6 +35,7 @@ export type Visit = {
   trace: Telemetry[];
   settings?: Settings;
   qualifiedAt?: string;
+  confirmedAt?: string;
   version: number;
 };
 export const emptyVisit = (): Visit => ({
@@ -91,7 +92,11 @@ export function advanceVisit(
     received < t - 5000 ||
     received - t > s.latenessSeconds * 1000 ||
     +now - t > (s.maxGapSeconds + s.latenessSeconds) * 1000 ||
-    gap > s.maxGapSeconds ||
+    // Continuous coverage is only evidence-critical once a potential arrival
+    // has begun.  The approaching phase may intentionally use a 60-second
+    // cadence, so treating that as a dwell-data gap would make every distant
+    // bus uncertain before it can arrive.
+    (v.state !== "OUTSIDE" && gap > s.maxGapSeconds) ||
     (o.accuracy !== undefined && o.accuracy > s.enterMeters) ||
     (v.last && gap > 0 && meters(v.last, o) / gap > 45) ||
     (v.last &&
@@ -137,6 +142,7 @@ export function advanceVisit(
         if (v.arrivalSamples >= 2) {
           v.state = "DWELLING";
           v.visitId = `${o.provider}:${o.vehicleId}:${v.t0}`;
+          v.confirmedAt = o.sourceAt;
         }
       } else {
         v.state = "OUTSIDE";

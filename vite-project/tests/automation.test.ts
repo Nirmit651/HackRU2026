@@ -32,7 +32,7 @@ import {
   emptyVisit,
   type Telemetry,
 } from "../server/automation/bus-state";
-import { evaluateScheduledMarket, monitorScheduledBus } from "../server/automation/bus";
+import { evaluateScheduledMarket, monitorScheduledBus, nextBusPollSeconds } from "../server/automation/bus";
 import { evaluateNextBusBreak } from "../server/automation/bus";
 import { collegeAveStudentCenter, createBusShowcase, selectNextBusCandidate } from "../server/bus-showcase";
 import { normalizeEspnGame, normalizeGame } from "../server/automation/providers";
@@ -94,6 +94,15 @@ describe("continuous observed bus visits", () => {
       s,
       new Date(base + 600000),
     );
+    expect(v.state).toBe("UNCERTAIN");
+  });
+  it("allows lower-frequency tracking before arrival but not after it", () => {
+    let v = advanceVisit(emptyVisit(), sample(-120, .001), s, new Date(base - 120000));
+    v = advanceVisit(v, sample(-60, .001), s, new Date(base - 60000));
+    expect(v.state).toBe("OUTSIDE");
+    v = advanceVisit(v, sample(0), s, new Date(base));
+    expect(v.state).toBe("ARRIVAL_CANDIDATE");
+    v = advanceVisit(v, sample(61), s, new Date(base + 61000));
     expect(v.state).toBe("UNCERTAIN");
   });
   it("jitter within fixed anchor keeps one visit", () => {
@@ -224,6 +233,12 @@ describe("frozen next-bus break markets", () => {
     const dwell = Array.from({ length: 61 }, (_, i) => telemetry(i * 10));
     expect(evaluateNextBusBreak(market, dwell, settings)).toMatchObject({ result: true });
     expect(evaluateNextBusBreak(market, [telemetry(0), telemetry(120)], settings)).toMatchObject({ void: "SOURCE_TIME_GAP_AFTER_ARRIVAL" });
+  });
+  it("uses adaptive polling without weakening the persisted evidence rules", () => {
+    const settings = { farPollSeconds: 60, approachingPollSeconds: 15, nearPollSeconds: 5 };
+    expect(nextBusPollSeconds(at, new Date(+at + 600000).toISOString(), "APPROACHING", settings)).toBe(60);
+    expect(nextBusPollSeconds(at, new Date(+at + 120000).toISOString(), "APPROACHING", settings)).toBe(15);
+    expect(nextBusPollSeconds(at, new Date(+at + 120000).toISOString(), "DWELLING", settings)).toBe(5);
   });
 });
 describe("scheduled bus snapshots", () => {

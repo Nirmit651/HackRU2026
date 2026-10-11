@@ -25,6 +25,16 @@ import { types, nowFor } from "./automation/core";
 import { cleanupPresentationDemo, createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
 export const app = express();
 app.disable("x-powered-by");
+// Vercel forwards rewrite paths unchanged. Browser-facing aliases therefore
+// need to be normalized before the established `/api/*` Express routes match.
+app.use((req, _res, next) => {
+  for (const prefix of ["/_scarlet", "/backend"])
+    if (req.url === prefix || req.url.startsWith(`${prefix}/`)) {
+      req.url = `/api${req.url.slice(prefix.length)}`;
+      break;
+    }
+  next();
+});
 app.set("json replacer", (_key: string, v: unknown) =>
   typeof v === "bigint" ? v.toString() : v,
 );
@@ -114,7 +124,13 @@ app.get("/api/environments", async (_req, res) => {
     },
   } as const;
   const [live, demo] = await Promise.all([
-    db.environment.findFirst({ where: { kind: "LIVE" }, orderBy: { createdAt: "desc" }, ...select }),
+    // Local/test harnesses create disposable LIVE environments. Never let one
+    // become the public app's default over the canonical Scarlet environment.
+    db.environment.findFirst({
+      where: { kind: "LIVE", key: { not: { startsWith: "live-test-" } } },
+      orderBy: { createdAt: "desc" },
+      ...select,
+    }),
     db.environment.findFirst({ where: { kind: "DEMO" }, orderBy: { createdAt: "desc" }, ...select }),
   ]);
   res.json([live, demo].filter(Boolean));

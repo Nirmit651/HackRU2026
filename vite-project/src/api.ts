@@ -22,7 +22,12 @@ export async function request<T>(
       : null,
     token = session?.access_token ?? sessionStorage.getItem("demo-token");
   const apiOrigin = (import.meta.env.VITE_API_ORIGIN ?? "").replace(/\/$/, "");
-  const r = await fetch(`${apiOrigin}/api${path}`, {
+  // Hosted deployments use a neutral same-origin path. Some browser privacy
+  // extensions block generic `/api/*` requests, which otherwise leaves the
+  // market selector empty even when the API and database are healthy. Local
+  // split-client/API development keeps the established `/api` contract.
+  const apiBase = apiOrigin ? `${apiOrigin}/api` : "/_scarlet";
+  const r = await fetch(`${apiBase}${path}`, {
     method: method ?? (body ? "POST" : "GET"),
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),

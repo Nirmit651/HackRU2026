@@ -67,6 +67,9 @@ export const settingsSchema = z
     latenessSeconds: z.number().min(1).max(30).default(10),
     durationSeconds: z.literal(600).default(600),
     cutoffSeconds: z.literal(60).default(60),
+    farPollSeconds: z.number().int().min(30).max(300).default(60),
+    approachingPollSeconds: z.number().int().min(10).max(30).default(15),
+    nearPollSeconds: z.number().int().min(5).max(15).default(5),
     stops: z
       .array(
         z.object({

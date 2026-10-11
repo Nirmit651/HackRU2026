@@ -103,6 +103,10 @@ export interface BusSnapshot {
   /** Frozen market geofence thresholds in meters; never inferred from live data. */
   geofenceEnterMeters?: number;
   geofenceExitMeters?: number;
+  phase?: "APPROACHING" | "ARRIVED" | "DWELLING" | "UNCERTAIN" | "RESOLVED";
+  arrivalConfirmedAt?: string | null;
+  dwellDeadline?: string | null;
+  serverNow?: string;
 }
 export interface PublicEvent {
   id: string;
