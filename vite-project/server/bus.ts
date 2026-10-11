@@ -47,6 +47,46 @@ export async function busSnapshot(
       settings.kind === "arrival_by_deadline" ||
       settings.kind === "presence_at_time"
     ) {
+      if (env.kind === "DEMO") {
+        const row = await db.automationState.findUnique({
+          where: {
+            environmentId_key: {
+              environmentId: env.id,
+              key: `demo-scheduled:${String(settings.sourceSystem)}:${String(settings.vehicleId)}:${String(settings.routeId)}`,
+            },
+          },
+        });
+        const observation = (row?.data as unknown as {
+          provider: string;
+          vehicleId: string;
+          routeId: string | null;
+          sourceAt: string;
+          receivedAt: string;
+          latitude: number;
+          longitude: number;
+        }[] | undefined)
+          ?.filter((item) =>
+            item.provider === settings.sourceSystem &&
+            item.vehicleId === settings.vehicleId &&
+            item.routeId === settings.routeId,
+          )
+          .sort((a, b) => Date.parse(b.sourceAt) - Date.parse(a.sourceAt))[0];
+        if (!observation) return null;
+        return {
+          source: market.provider,
+          isSimulated: true,
+          observedAt: observation.sourceAt,
+          receivedAt: observation.receivedAt,
+          vehicles: [{
+            id: observation.vehicleId,
+            routeId: observation.routeId ?? "Unknown",
+            latitude: observation.latitude,
+            longitude: observation.longitude,
+            updatedAt: observation.sourceAt,
+          }],
+          stops: [settings.stop as BusSnapshot["stops"][number]],
+        };
+      }
       const [observation] = await db.$queryRaw<
         {
           vehicle_id: string;
@@ -71,7 +111,7 @@ export async function busSnapshot(
       const sourceAt = observation.source_measured_at.toISOString();
       return {
         source: market.provider,
-        isSimulated: env.kind === "DEMO",
+        isSimulated: false,
         observedAt: sourceAt,
         receivedAt: observation.retrieved_at.toISOString(),
         vehicles: [

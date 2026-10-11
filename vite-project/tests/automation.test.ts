@@ -259,6 +259,7 @@ describe("scheduled bus snapshots", () => {
     queryRaw.mockReset();
     findMarket.mockReset();
     findEnvironment.mockReset();
+    findAutomationState.mockReset();
     findMarket.mockResolvedValue({
       category: "BUS_ARRIVAL",
       environmentId: "env",
@@ -267,7 +268,7 @@ describe("scheduled bus snapshots", () => {
     });
     findEnvironment.mockResolvedValue({ id: "env", kind: "LIVE" });
   });
-  it("returns the latest matching persisted observation with the frozen stop", async () => {
+  it("uses public.bus_observations for a LIVE scheduled market", async () => {
     queryRaw.mockResolvedValue([
       {
         vehicle_id: "bus-12",
@@ -284,10 +285,26 @@ describe("scheduled bus snapshots", () => {
       vehicles: [{ id: "bus-12", routeId: "LX", latitude: 40.523, longitude: -74.436 }],
       stops: [stop],
     });
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
-  it("returns null when no matching persisted observation exists", async () => {
-    queryRaw.mockResolvedValue([]);
+  it("returns the latest simulated vehicle and frozen stop for a DEMO scheduled market", async () => {
+    findEnvironment.mockResolvedValue({ id: "env", kind: "DEMO" });
+    findAutomationState.mockResolvedValue({ data: [
+      { provider: "rubus", vehicleId: "bus-12", routeId: "LX", sourceAt: "2026-10-10T16:00:01.000Z", receivedAt: "2026-10-10T16:00:01.000Z", latitude: 40.52, longitude: -74.43 },
+      { provider: "rubus", vehicleId: "bus-12", routeId: "LX", sourceAt: "2026-10-10T16:00:02.000Z", receivedAt: "2026-10-10T16:00:03.000Z", latitude: 40.523, longitude: -74.436 },
+    ] });
+    await expect(busSnapshot("market")).resolves.toMatchObject({
+      isSimulated: true,
+      vehicles: [{ id: "bus-12", latitude: 40.523, longitude: -74.436 }],
+      stops: [stop],
+    });
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+  it("returns null for a DEMO scheduled market with no simulated observation", async () => {
+    findEnvironment.mockResolvedValue({ id: "env", kind: "DEMO" });
+    findAutomationState.mockResolvedValue(null);
     await expect(busSnapshot("market")).resolves.toBeNull();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
 describe("documented sports schemas", () => {
