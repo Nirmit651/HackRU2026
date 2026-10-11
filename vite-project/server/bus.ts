@@ -45,7 +45,8 @@ export async function busSnapshot(
     const settings = automation.settings;
     if (
       settings.kind === "arrival_by_deadline" ||
-      settings.kind === "presence_at_time"
+      settings.kind === "presence_at_time" ||
+      settings.kind === "next_bus_break"
     ) {
       if (env.kind === "DEMO") {
         const row = await db.automationState.findUnique({

@@ -97,6 +97,6 @@ export function BusMap({ marketId, accessToken, routeId, stopName, deadline }: {
     <div className="bus-panel-heading"><div><span className="section-label">Route {routeId} · {stopName}</span><h2>Bus route</h2></div><div className="bus-status">{failed ? "Live feed unavailable" : snapshot?.isSimulated ? "SIMULATED · recorded scenario" : snapshot && Date.now() - Date.parse(snapshot.observedAt) > 30000 ? "Stale vehicle data" : "Live vehicle data"}</div></div>
     <p className="bus-panel-copy">Follow the route line and live vehicle position to the target stop. Deadline {date(deadline)}.</p>
     {accessToken ? <div ref={host} className="map" /> : <div className="map-empty">Mapbox is not configured.</div>}
-    <small>{snapshot ? `${snapshot.source} · updated ${date(snapshot.observedAt)}` : "Waiting for teammate adapter"}</small>
+    <small>{snapshot ? `${snapshot.source} · updated ${date(snapshot.observedAt)}` : "Selected vehicle telemetry unavailable; this market will not substitute another bus."}</small>
   </section>;
 }

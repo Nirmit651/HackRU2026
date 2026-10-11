@@ -503,15 +503,18 @@ export default function App() {
               {selected.category === "PRESENTATION_DEMO" && <PresentationPanel market={selected} admin={demoAdmin} onRefresh={refreshAccount} onDeleted={closeCompletedPresentation} />}
             </div>
             {selected.category === "BUS_ARRIVAL" && (
-              <Suspense fallback={<p>Loading map…</p>}>
-                <BusMap
-                  marketId={selected.id}
-                  routeId={String(selected.context.routeId ?? "Unknown route")}
-                  stopName={String(selected.context.stopName ?? selected.context.stopId ?? "Target stop")}
-                  deadline={String(selected.context.deadline ?? selected.resolutionRule.windowEnd)}
-                  accessToken={config?.mapboxToken ?? null}
-                />
-              </Suspense>
+              <>
+                {selected.context.frozenEtaSeconds !== undefined && <div className="bus-panel-copy"><strong>Frozen selection:</strong> Route {String(selected.context.routeId)} · vehicle {String(selected.context.vehicleId)} · estimated {Math.ceil(Number(selected.context.frozenEtaSeconds) / 60)} minutes to {String(selected.context.destination ?? selected.context.stopName)} at creation. YES requires a continuous 10-minute stay inside the destination geofence; confirmed early departure is NO.</div>}
+                <Suspense fallback={<p>Loading map…</p>}>
+                  <BusMap
+                    marketId={selected.id}
+                    routeId={String(selected.context.routeId ?? "Unknown route")}
+                    stopName={String(selected.context.stopName ?? selected.context.stopId ?? "Target stop")}
+                    deadline={String(selected.context.deadline ?? selected.resolutionRule.windowEnd)}
+                    accessToken={config?.mapboxToken ?? null}
+                  />
+                </Suspense>
+              </>
             )}
             <div className="detail-grid">
               <div className="detail-content">

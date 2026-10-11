@@ -26,6 +26,10 @@ type ScheduledObservation = Telemetry;
 type ScheduledEvaluation =
   | { result: boolean; observation: ScheduledObservation; reason: string }
   | { void: string };
+type BreakEvaluation =
+  | { result: boolean; observation: Telemetry; arrival: Telemetry; reason: string }
+  | { void: string }
+  | null;
 
 function scheduledInvalid(
   rows: ScheduledObservation[],
@@ -77,6 +81,30 @@ export function evaluateScheduledMarket(
     if (+new Date(rows[i].sourceAt) - +new Date(rows[i - 1].sourceAt) > settings.maxGapSeconds * 1000)
       return null;
   return { result: false, observation: last, reason: "CONTINUOUS_SOURCE_TIME_COVERAGE_WITHOUT_ARRIVAL" };
+}
+
+/** Continuous source-time proof for a frozen next-bus break market. */
+export function evaluateNextBusBreak(
+  market: { routeId: string; stop: { latitude: number; longitude: number }; opensAt: string },
+  rows: Telemetry[], settings: { enterMeters: number; exitMeters: number; maxGapSeconds: number; latenessSeconds: number; durationSeconds: number },
+): BreakEvaluation {
+  const invalid = scheduledInvalid(rows, settings);
+  if (invalid) return { void: invalid };
+  if (rows.some((row) => row.routeId !== market.routeId)) return { void: "ROUTE_IDENTITY_CHANGED" };
+  const arrivalIndex = rows.findIndex((row) => meters(market.stop, row) <= settings.enterMeters);
+  if (arrivalIndex < 0) return null;
+  const arrival = rows[arrivalIndex], target = +new Date(arrival.sourceAt) + settings.durationSeconds * 1000;
+  let outside = 0;
+  for (let i = arrivalIndex + 1; i < rows.length; i++) {
+    const row = rows[i], previous = rows[i - 1];
+    if (+new Date(row.sourceAt) - +new Date(previous.sourceAt) > settings.maxGapSeconds * 1000) return { void: "SOURCE_TIME_GAP_AFTER_ARRIVAL" };
+    if (meters(market.stop, row) > settings.exitMeters) {
+      outside++;
+      if (outside >= 2 && +new Date(row.sourceAt) < target) return { result: false, observation: row, arrival, reason: "CONFIRMED_DEPARTURE_BEFORE_10_MINUTES" };
+    } else outside = 0;
+    if (+new Date(row.sourceAt) >= target) return { result: true, observation: row, arrival, reason: "CONTINUOUS_GEOFENCE_DWELL_FOR_10_MINUTES" };
+  }
+  return null;
 }
 
 export async function generateScheduledMarkets(config: AutomationConfig, at: Date) {
@@ -294,6 +322,7 @@ export async function monitorBus(m: Market) {
     settings = r.automation!.settings;
   if (settings.kind === "arrival_by_deadline" || settings.kind === "presence_at_time")
     return monitorScheduledBus(m, settings, at);
+  if (settings.kind === "next_bus_break") return monitorNextBusBreak(m, settings, at);
   const row = await db.automationState.findUnique({
     where: {
       environmentId_key: {
@@ -355,6 +384,37 @@ export async function monitorBus(m: Market) {
       { visit: v ?? null, reason: "INSUFFICIENT_CONTINUOUS_EVIDENCE" },
       at,
     );
+    return;
+  }
+  return add(at, 10);
+}
+export async function monitorNextBusBreak(m: Market, settings: Record<string, unknown>, at: Date) {
+  const rows = await db.$queryRaw<{
+    source_system: string; vehicle_id: string; source_measured_at: Date; retrieved_at: Date;
+    latitude: number; longitude: number; route_id: string | null; source_observation_id: string | null;
+  }[]>`
+    SELECT source_system,vehicle_id,source_measured_at,retrieved_at,latitude,longitude,route_id,source_observation_id
+    FROM public.bus_observations
+    WHERE source_system=${String(settings.sourceSystem)} AND vehicle_id=${String(settings.vehicleId)}
+      AND is_valid AND observation_kind='vehicle_position' AND measurement_time_basis='source'
+      AND source_measured_at >= ${new Date(String(settings.opensAt))} AND source_measured_at <= ${at}
+      AND latitude IS NOT NULL AND longitude IS NOT NULL
+    ORDER BY source_measured_at,id`;
+  const observations = rows.map((row) => ({ provider: row.source_system, vehicleId: row.vehicle_id, sourceAt: iso(row.source_measured_at), receivedAt: iso(row.retrieved_at), latitude: row.latitude, longitude: row.longitude, routeId: row.route_id, sequenceId: row.source_observation_id ?? undefined }))
+    .filter((row, index, all) => index === 0 || row.sourceAt !== all[index - 1].sourceAt || row.latitude !== all[index - 1].latitude || row.longitude !== all[index - 1].longitude || row.routeId !== all[index - 1].routeId);
+  const latest = observations.at(-1);
+  if ((!latest || +at - +new Date(latest.sourceAt) > (Number(settings.maxGapSeconds) + Number(settings.latenessSeconds)) * 1000) && m.status === "OPEN") {
+    try { await lifecycle(m.id, "PAUSED"); } catch { /* concurrent transition is harmless */ }
+  }
+  const result = evaluateNextBusBreak({ routeId: String(settings.routeId), stop: settings.stop as { latitude: number; longitude: number }, opensAt: String(settings.opensAt) }, observations, { enterMeters: Number(settings.enterMeters), exitMeters: Number(settings.exitMeters), maxGapSeconds: Number(settings.maxGapSeconds), latenessSeconds: Number(settings.latenessSeconds), durationSeconds: Number(settings.durationSeconds) });
+  if (result && "result" in result) {
+    await finish(m, { units: "boolean", result: result.result }, { algorithm: settings.algorithm, reason: result.reason, arrival: result.arrival, observation: result.observation, frozen: settings }, new Date(result.observation.sourceAt));
+    return;
+  }
+  // First entry freezes trading even while the ten-minute evidence window is pending.
+  if (observations.some((row) => meters(settings.stop as { latitude: number; longitude: number }, row) <= Number(settings.enterMeters))) await close(m);
+  if (at >= new Date(String(settings.voidAfter))) {
+    await finish(m, { units: "boolean", missing: true }, { algorithm: settings.algorithm, reason: result && "void" in result ? result.void : "INSUFFICIENT_CONTINUOUS_EVIDENCE", frozen: settings }, at);
     return;
   }
   return add(at, 10);
