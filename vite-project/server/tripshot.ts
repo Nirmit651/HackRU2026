@@ -7,7 +7,7 @@ const REGION = "CA558DDC-D7F2-4B48-9CAC-DEEA1134F820";
 const STATIC_URL = `https://rutgers.tripshot.com/v1/gtfs.zip?regionId=${REGION}`;
 const TRIPS_URL = `https://rutgers.tripshot.com/v1/gtfs/realtime/tripUpdate/${REGION}`;
 const VEHICLES_URL = `https://rutgers.tripshot.com/v1/gtfs/realtime/vehiclePosition/${REGION}`;
-const STATIC_TTL_MS = 24 * 60 * 60_000, REALTIME_TTL_MS = 15_000, STALE_MS = 45_000;
+const STATIC_TTL_MS = 24 * 60 * 60_000, REALTIME_TTL_MS = 5_000, STALE_MS = 45_000;
 
 export type Stop = { id: string; name: string; latitude: number; longitude: number };
 type Route = { id: string; shortName: string; longName: string; color?: string };
