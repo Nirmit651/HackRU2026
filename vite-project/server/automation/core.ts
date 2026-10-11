@@ -1,4 +1,3 @@
-import { DateTime } from "luxon";
 import { z } from "zod";
 import { db, clock, ensure } from "../db";
 import { createMarket, createMarketInput } from "../markets";
@@ -8,7 +7,7 @@ import { ruleSchema, type ProviderEvidence } from "../../shared/contracts";
 import type { Market } from "../../generated/prisma/client";
 
 export const zone = "America/New_York";
-export const types = ["temperature", "football", "basketball", "bus"] as const;
+export const types = ["football", "basketball", "bus"] as const;
 const scheduledMarketSchema = z
   .object({
     id: z.string().min(1).max(100),
@@ -38,15 +37,6 @@ const scheduledMarketSchema = z
   });
 export const settingsSchema = z
   .object({
-    station: z
-      .string()
-      .regex(/^[A-Z0-9]{3,8}$/)
-      .default("KSMQ"),
-    stationName: z.string().default("Somerville, Somerset Airport"),
-    latitude: z.number().min(-90).max(90).default(40.62),
-    longitude: z.number().min(-180).max(180).default(-74.67),
-    graceHours: z.number().min(1).max(12).default(2),
-    maxWaitHours: z.number().min(12).max(72).default(36),
     horizonDays: z.number().int().min(1).max(60).default(30),
     teamId: z.number().int().positive().optional(),
     provider: z.enum(["ESPN", "CFBD", "CBBD"]).default("ESPN"),
@@ -110,11 +100,6 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const iso = (at: Date | number) => new Date(at).toISOString();
 export const add = (at: Date, seconds: number) =>
   new Date(+at + seconds * 1000);
-export function dayInterval(date: string) {
-  const start = DateTime.fromISO(date, { zone }).startOf("day");
-  ensure(start.isValid, "INVALID_LOCAL_DATE");
-  return { start: start.toJSDate(), end: start.plus({ days: 1 }).toJSDate() };
-}
 export const nowFor = (id: string) => clock(db, id);
 export function rule(
   type: (typeof types)[number],

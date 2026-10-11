@@ -1,10 +1,10 @@
 # Scarlet Exchange
 
-Automated temperature, bus stop-duration, football and men's basketball markets are implemented in `server/automation`. See [automation setup, policies, credentials, commands and verification](docs/AUTOMATION.md). They reuse the existing funding, trading, settlement and event services. Generators start disabled until configured in Admin.
+Bus-arrival, Rutgers football, and Rutgers men's basketball markets are implemented in `server/automation`. See [automation setup, policies, credentials, commands and verification](docs/AUTOMATION.md). They reuse the existing funding, trading, settlement and event services. Generators start disabled until configured in Admin.
 
 A Rutgers campus prediction-market demo for HackRU 2026. Students spend **play $R**, buy YES/NO shares, receive settlement receipts, and compete by **cash balance**. No purchase, cash-out, secondary selling, or official Rutgers affiliation.
 
-The existing repository was a Vite React starter with no Supabase/Tiger application code. This implementation preserves Vite/npm and adds a TypeScript Express API/worker and Prisma 7 PostgreSQL engine. Intended sponsor submissions: **Lucera + Tiger Data**, **Maverick** track. Optional Solana functionality is separate from prize selection; no third submission is assumed.
+The existing repository was a Vite React starter with no Supabase/Tiger application code. This implementation preserves Vite/npm and adds a TypeScript Express API/worker and Prisma 7 PostgreSQL engine.
 
 ## Local setup
 
@@ -135,23 +135,11 @@ Restart the coding assistant. The hosted docs MCP supplies documentation; CLI MC
 
 ## Providers and bus boundary
 
-See [BUS_ADAPTER.md](docs/BUS_ADAPTER.md). The teammate owns ingestion. `BUS_ADAPTER_URL`/token supplies display snapshots; `EVIDENCE_ADAPTER_URL`/token supplies normalized final observations. Neither fetches a browser-supplied URL. Missing feeds show unavailable; LIVE feeds reject simulated data. MapLibre loads only for bus markets. Set `MAP_STYLE_URL` to a permitted tile/style provider; attribution is preserved. Unconfigured maps show coordinates/unavailability rather than invented motion.
+See [BUS_ADAPTER.md](docs/BUS_ADAPTER.md). The teammate owns ingestion. `BUS_ADAPTER_URL`/token supplies display snapshots; `EVIDENCE_ADAPTER_URL`/token supplies normalized final observations. Neither fetches a browser-supplied URL. Missing feeds show unavailable; LIVE feeds reject simulated data. Mapbox loads only for bus markets. Set the public `MAPBOX_KEY` for the basemap; without it, the UI shows an explicit unavailable state.
 
 CFBD football and CBBD basketball adapters validate finality, scores, Rutgers participation, game IDs and cutoff before play. CBBD 2027 denotes 2026–27. No broader varsity coverage is implied. The adapters were tested using labeled fixtures; authenticated live requests were not made. The used schemas do not supply a verified finish timestamp, so `observedAt` means the adapter observed final status at fetch time. Frozen sports windows must include that observation.
 
-Weather/bus settlement uses the normalized boundary; concert/election resolution uses authorized manual evidence including official channels checked. An outage is never evidence of NO. Missing results stay pending until evidence invokes the frozen VOID policy.
-
-## Optional Solana Devnet
-
-```sh
-# Inject a funded development signer through server secret storage.
-# Set SOLANA_ENABLED=true and SOLANA_SECRET_KEY; never commit it.
-npm run chain:worker
-```
-
-A separate worker queues rule hashes while DRAFT and receipt hashes after settlement. It uses Kit 8, v1 transactions and the memo program with simulation enabled. RPC genesis must match official Devnet. Verification recomputes canonical SHA-256 and checks a confirmed successful transaction, expected signer, memo program and exact payload. Precommit status additionally requires block time strictly before `opensAt`. This proves publication/integrity, not the outcome's truth. Accounting is independent of chain availability.
-
-No signer/funds were supplied and no transaction was sent. Parsed-memo/tamper checks have unit tests; live submission remains unverified. A crash between submission and signature persistence can repeat the same public memo, never a payout.
+Bus settlement uses the normalized boundary. An outage is never evidence of NO. Missing results stay pending until evidence invokes the frozen VOID policy.
 
 ## Verification and performance
 
@@ -177,11 +165,11 @@ Tests cover real transactions, concurrent grants/spending/retries/settlement, po
 
 ## Deployment and limitations
 
-Build and serve `dist` behind HTTPS, routing `/api` to the Node process. Start `npm run api` with production config and a separately supervised `npm run worker`. Start `chain:worker` only if configured. Apply migrations first. Workers finish current work and disconnect on SIGINT/SIGTERM; do not run them inside serverless requests. Review rollback as a forward migration and retain audit history. No deployment was published and no competition entry submitted.
+Build and serve `dist` behind HTTPS, routing `/api` to the Node process. Start `npm run api` with production config and a separately supervised `npm run worker`. Apply migrations first. Workers finish current work and disconnect on SIGINT/SIGTERM; do not run them inside serverless requests. Review rollback as a forward migration and retain audit history.
 
-Limits: per-process in-memory rate limits (use a shared limiter before scaling), bounded list/history/portfolio pages, buy-and-hold only, fixed synthetic demo fixtures, no automated election/concert scraping, no arbitrary sports coverage, raw chart events rather than aggregate ranges, and a large lazy-loaded MapLibre bundle. Prisma/pg emits a concurrent-query deprecation warning during transaction batches; checks pass and pg is pinned below 9.
+Limits: per-process in-memory rate limits (use a shared limiter before scaling), bounded list/history/portfolio pages, buy-and-hold only, fixed synthetic demo fixtures, no arbitrary sports coverage, raw chart events rather than aggregate ranges, and a large lazy-loaded Mapbox bundle. Prisma/pg emits a concurrent-query deprecation warning during transaction batches; checks pass and pg is pinned below 9.
 
-Team-built: ledger, LMSR, auth boundaries, frozen rules/evidence, settlement/receipts, recovery, exporter, adapters, demo/replay, UI and verification scripts. Third-party: React/Vite, Express, Supabase, Prisma/pg, Decimal.js, Zod, Tiger/TimescaleDB, TradingView Lightweight Charts, MapLibre, Lucide, Solana Kit/memo, Vitest and Playwright. No LLM API is required. Existing `.agents` and `skills-lock.json` were preserved.
+Team-built: ledger, LMSR, auth boundaries, frozen rules/evidence, settlement/receipts, recovery, exporter, adapters, demo/replay, UI and verification scripts. Third-party: React/Vite, Express, Supabase, Prisma/pg, Decimal.js, Zod, Tiger/TimescaleDB, TradingView Lightweight Charts, Mapbox GL JS, Lucide, Vitest and Playwright. No LLM API is required. Existing `.agents` and `skills-lock.json` were preserved.
 
 More: [architecture](docs/ARCHITECTURE.md), [API](docs/API.md), [verification status](docs/VERIFICATION.md).
 
@@ -191,6 +179,6 @@ GitHub Pages can host the frontend, but not this project's Express API, PostgreS
 
 ## References checked
 
-[Supabase Prisma](https://supabase.com/docs/guides/database/prisma), [Realtime](https://supabase.com/docs/guides/realtime/subscribing-to-database-changes), [explicit Data API grants](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically), [Prisma 7](https://www.prisma.io/docs/guides/upgrade-prisma-orm/v7), [Tiger indexes](https://www.tigerdata.com/docs/build/performance-optimization/hypertables-and-unique-indexes), [Tiger aggregates](https://www.tigerdata.com/docs/learn/continuous-aggregates), [Lightweight Charts](https://tradingview.github.io/lightweight-charts/docs), [MapLibre](https://maplibre.org/maplibre-gl-js/docs/), [CFBD games](https://apinext.collegefootballdata.com/api/games), [CBBD games](https://api.collegebasketballdata.com/api/games), [Solana memo](https://solana.com/developers/cookbook/transactions/add-memo).
+[Supabase Prisma](https://supabase.com/docs/guides/database/prisma), [Realtime](https://supabase.com/docs/guides/realtime/subscribing-to-database-changes), [explicit Data API grants](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically), [Prisma 7](https://www.prisma.io/docs/guides/upgrade-prisma-orm/v7), [Tiger indexes](https://www.tigerdata.com/docs/build/performance-optimization/hypertables-and-unique-indexes), [Tiger aggregates](https://www.tigerdata.com/docs/learn/continuous-aggregates), [Lightweight Charts](https://tradingview.github.io/lightweight-charts/docs), [Mapbox GL JS](https://docs.mapbox.com/mapbox-gl-js/guides/get-started/), [CFBD games](https://apinext.collegefootballdata.com/api/games), [CBBD games](https://api.collegebasketballdata.com/games).
 
-The [HackRU MLH prize page](https://www.mlh.com/events/hackru-21/prizes) lists Tiger and Solana, but does not establish the supplied Lucera brief or reported two-superlative limit. The selected targets remain Lucera + Tiger as instructed.
+The application uses play money only and is not affiliated with Rutgers University.

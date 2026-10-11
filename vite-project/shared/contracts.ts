@@ -1,8 +1,6 @@
 import { z } from "zod";
 export const categories = [
-  "TEMPERATURE",
   "BUS_ARRIVAL",
-  "RAINFALL",
   "VARSITY_SPORTS",
 ] as const;
 export const marketCategories = [...categories, "PRESENTATION_DEMO"] as const;
@@ -53,7 +51,7 @@ export const ruleSchema = z.object({
   comparison: z.enum(["GT", "GTE", "LTE", "TRUE"]).default("TRUE"),
   automation: z
     .object({
-      type: z.enum(["temperature", "football", "basketball", "bus"]),
+      type: z.enum(["football", "basketball", "bus"]),
       version: z.number().int().positive(),
       settings: z.record(z.string(), z.json()),
     })

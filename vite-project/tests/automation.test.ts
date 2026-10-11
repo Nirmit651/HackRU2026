@@ -23,9 +23,8 @@ vi.mock("../server/automation/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../server/automation/core")>()),
   finish,
 }));
-import { dayInterval, rule, settingsSchema } from "../server/automation/core";
+import { rule, settingsSchema } from "../server/automation/core";
 import { busSnapshot } from "../server/bus";
-import { observedAverage, roundThreshold } from "../server/automation/weather";
 import {
   advanceVisit,
   emptyVisit,
@@ -66,38 +65,6 @@ function visitUntil(seconds: number) {
     v = advanceVisit(v, sample(t), s, new Date(base + t * 1000));
   return v;
 }
-describe("weather calculation", () => {
-  it.each([
-    ["2026-03-08", 23],
-    ["2026-11-01", 25],
-    ["2026-10-11", 24],
-  ])("uses actual hours on %s", (date, count) => {
-    const { start, end } = dayInterval(String(date));
-    expect((+end - +start) / 3600000).toBe(count);
-    const rows = Array.from({ length: Number(count) }, (_, i) => ({
-      sourceId: String(i),
-      observedAt: new Date(+start + i * 3600000),
-      temperatureF: 65,
-    }));
-    expect(observedAverage(start, end, rows).mean).toBe(65);
-    expect(observedAverage(start, end, rows.slice(1)).mean).toBeNull();
-  });
-  it("deduplicates and excludes the end boundary", () => {
-    const { start, end } = dayInterval("2026-10-11");
-    const r = { sourceId: "a", observedAt: start, temperatureF: 60 };
-    const a = observedAverage(start, end, [
-      r,
-      r,
-      { ...r, sourceId: "end", observedAt: end },
-    ]);
-    expect(a.hourly[0].count).toBe(1);
-    expect(a.complete).toBe(false);
-  });
-  it("rounds ties toward positive infinity", () => {
-    expect(roundThreshold(62.5)).toBe(65);
-    expect(roundThreshold(-2.5)).toBe(0);
-  });
-});
 describe("continuous observed bus visits", () => {
   it("does not create a visit for an already parked startup bus", () => {
     expect(
@@ -278,12 +245,21 @@ describe("scheduled bus snapshots", () => {
         latitude: 40.523,
         longitude: -74.436,
       },
+      {
+        vehicle_id: "bus-12",
+        route_id: "LX",
+        source_measured_at: new Date("2026-10-10T16:00:01.000Z"),
+        retrieved_at: new Date("2026-10-10T16:00:01.000Z"),
+        latitude: 40.52,
+        longitude: -74.43,
+      },
     ]);
     await expect(busSnapshot("market")).resolves.toMatchObject({
       source: "RUBus",
       isSimulated: false,
       vehicles: [{ id: "bus-12", routeId: "LX", latitude: 40.523, longitude: -74.436 }],
       stops: [stop],
+      routeGeometry: [[-74.43, 40.52], [-74.436, 40.523]],
     });
     expect(queryRaw).toHaveBeenCalledTimes(1);
   });
@@ -297,6 +273,7 @@ describe("scheduled bus snapshots", () => {
       isSimulated: true,
       vehicles: [{ id: "bus-12", latitude: 40.523, longitude: -74.436 }],
       stops: [stop],
+      routeGeometry: [[-74.43, 40.52], [-74.436, 40.523]],
     });
     expect(queryRaw).not.toHaveBeenCalled();
   });

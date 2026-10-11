@@ -12,9 +12,7 @@ import {
   Trophy,
   Settings,
   Check,
-  Sun,
   Bus,
-  CloudRain,
   Flag,
   LogOut,
   Clock3,
@@ -41,16 +39,12 @@ import { categories, campuses } from "../shared/contracts";
 import "./App.css";
 import { marketTemplate } from "../shared/templates";
 const labels: Record<string, string> = {
-  TEMPERATURE: "Temperature",
   BUS_ARRIVAL: "Bus arrivals",
-  RAINFALL: "Rainfall",
   VARSITY_SPORTS: "Varsity sports",
   PRESENTATION_DEMO: "Presentation demo",
 };
 const icons = {
-  TEMPERATURE: Sun,
   BUS_ARRIVAL: Bus,
-  RAINFALL: CloudRain,
   VARSITY_SPORTS: Flag,
   PRESENTATION_DEMO: Timer,
 };
@@ -60,6 +54,8 @@ const payoutMultiple = (price: string | number) => {
 };
 const multipleLabel = (price: string | number) =>
   `${payoutMultiple(price).toFixed(2)}×`;
+const marketCloseLabel = (market: PublicMarket) =>
+  `${market.status === "OPEN" ? "Closes" : "Closed"} ${date(market.closesAt)}`;
 function AnimatedProbability({ value }: { value: number }) {
   const [displayed, setDisplayed] = useState(value);
   const prior = useRef(value);
@@ -109,7 +105,6 @@ type Receipt = {
     payoutMicros: string;
     netProfitMicros: string;
   } | null;
-  verification: { status: string };
 };
 function MarketSparkline({ market }: { market: PublicMarket }) {
   const [values, setValues] = useState<number[]>([]);
@@ -358,14 +353,17 @@ export default function App() {
                   Your call, with play money.
                 </p>
               </div>
-              {demoAdmin && <button className="outline" onClick={() => request<{ market: PublicMarket }>("/presentation/create", {}).then((r) => { setSelected(r.market); setView("markets"); refreshAccount(); }).catch((e) => setError(e.message))}>Create presentation demo</button>}
+              {demoAdmin && <div className="admin-market-actions">
+                <button className="outline" onClick={() => request<{ market: PublicMarket }>("/presentation/create", {}).then(({ market }) => { setSelected(market); setView("markets"); refreshAccount(); }).catch((e) => setError(e.message))}>Create presentation demo</button>
+                <button className="outline" onClick={() => request<{ market: PublicMarket }>("/bus/showcase", {}).then(({ market }) => { setSelected(market); setView("markets"); refreshAccount(); }).catch((e) => setError(e.message))}>Create bus arrival demo</button>
+              </div>}
             </div>
             <div className="discovery-tools">
               <label className="search">
                 <Search size={18} />
                 <input
                   aria-label="Search markets"
-                  placeholder="Search markets (Rutgers, weather, buses...)"
+                  placeholder="Search markets (Rutgers, sports, buses...)"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -424,7 +422,7 @@ export default function App() {
                         <span className="category-badge">{labels[m.category]}</span>
                         <span className="market-status"><i />{m.status}</span>
                       </div>
-                      <span className="market-close">Closes {date(m.closesAt)}</span>
+                      <span className="market-close">{marketCloseLabel(m)}</span>
                     </div>
                     <h2>{m.title}</h2>
                     <div className="market-card-body">
@@ -504,6 +502,17 @@ export default function App() {
               <DemoSimulation env={env} authorized={!!me?.admin} onRefresh={() => { refreshAccount(); void request<EnvironmentView[]>("/environments").then(setEnvs); }} />
               {selected.category === "PRESENTATION_DEMO" && <PresentationPanel market={selected} admin={demoAdmin} onRefresh={refreshAccount} onDeleted={closeCompletedPresentation} />}
             </div>
+            {selected.category === "BUS_ARRIVAL" && (
+              <Suspense fallback={<p>Loading map…</p>}>
+                <BusMap
+                  marketId={selected.id}
+                  routeId={String(selected.context.routeId ?? "Unknown route")}
+                  stopName={String(selected.context.stopName ?? selected.context.stopId ?? "Target stop")}
+                  deadline={String(selected.context.deadline ?? selected.resolutionRule.windowEnd)}
+                  accessToken={config?.mapboxToken ?? null}
+                />
+              </Suspense>
+            )}
             <div className="detail-grid">
               <div className="detail-content">
                 <div className="quote-head probability-panel">
@@ -522,7 +531,6 @@ export default function App() {
                 <Suspense fallback={<p>Loading chart…</p>}>
                   <MarketChart market={selected} onUpdate={refreshAccount} />
                 </Suspense>
-                {me && <MarketHolding market={selected} refresh={refresh} />}
                 <section className="rules" id="resolution">
                   <div className="rules-heading">
                     <div>
@@ -602,26 +610,7 @@ export default function App() {
                     );
                   }}
                 />
-                {selected.category === "BUS_ARRIVAL" && (
-                  <Suspense fallback={<p>Loading map…</p>}>
-                    <BusMap
-                      marketId={selected.id}
-                      routeId={String(
-                        selected.context.routeId ?? "Unknown route",
-                      )}
-                      stopName={String(
-                        selected.context.stopName ??
-                          selected.context.stopId ??
-                          "Target stop",
-                      )}
-                      deadline={String(
-                        selected.context.deadline ??
-                          selected.resolutionRule.windowEnd,
-                      )}
-                      style={config?.mapStyle ?? null}
-                    />
-                  </Suspense>
-                )}
+                {me && <MarketHolding market={selected} refresh={refresh} />}
               </aside>
             </div>
           </>
@@ -1174,12 +1163,7 @@ function Leaderboard({
   );
 }
 function ReceiptView({ marketId }: { marketId: string }) {
-  const [data, setData] = useState<Receipt | null>(null),
-    [verification, setVerification] = useState<{
-      status: string;
-      explorerUrl?: string;
-      meaning?: string;
-    } | null>(null);
+  const [data, setData] = useState<Receipt | null>(null);
   useEffect(() => {
     request<Receipt>(`/markets/${marketId}/receipt`).then(setData);
   }, [marketId]);
@@ -1216,32 +1200,6 @@ function ReceiptView({ marketId }: { marketId: string }) {
         </dl>
       )}
       <p className="hash">Receipt SHA-256: {data.receiptHash}</p>
-      <p>
-        Devnet verification: {verification?.status ?? data.verification.status}
-      </p>
-      {data.verification.status !== "UNAVAILABLE" && (
-        <button
-          className="outline"
-          onClick={() =>
-            request<{ status: string; explorerUrl?: string; meaning?: string }>(
-              `/markets/${marketId}/verify`,
-            )
-              .then(setVerification)
-              .catch(() => setVerification({ status: "VERIFICATION_FAILED" }))
-          }
-        >
-          Verify receipt
-        </button>
-      )}
-      {verification?.explorerUrl && (
-        <p>
-          <a href={verification.explorerUrl} target="_blank" rel="noreferrer">
-            View Devnet transaction ↗
-          </a>
-          <br />
-          {verification.meaning}
-        </p>
-      )}
       <button className="outline" onClick={download}>
         Download receipt JSON <ArrowUpRight size={15} />
       </button>

@@ -12,8 +12,6 @@ flowchart LR
   Worker[Explicit worker] -->|Same engine| PG
   Worker -->|Leased outbox delivery| Tiger[(Tiger hypertable / minute aggregate)]
   API -->|History + authoritative missing tail| Tiger
-  Chain[Optional separate Devnet worker] --> PG
-  Chain --> Memo[Devnet memo program]
 ```
 
 ## Accounting and concurrency
@@ -22,7 +20,7 @@ All amounts are BIGINT micro-R serialized as decimal strings. Decimal.js uses 60
 
 An environment starts with $R 1,000,000 in the treasury's immutable opening balance. Every other wallet starts at zero. Grants, maker funding, purchases and payouts create two-sided transfer rows. Reconciliation checks individual balances, total supply, aggregate shares, and payout/transfer totals.
 
-Lock order is environment (only when initializing/granting or coordinating DEMO clock), then market, then wallets sorted by UUID. LIVE trades serialize by market and shared wallet; DEMO additionally serializes environment actions to obtain deterministic virtual-time ordering. PostgreSQL READ COMMITTED with explicit row locks is intentional. The clock is checked after lock acquisition. Money transactions never call external providers, Tiger, or Solana. Bounded retries handle deadlocks and uniqueness races.
+Lock order is environment (only when initializing/granting or coordinating DEMO clock), then market, then wallets sorted by UUID. LIVE trades serialize by market and shared wallet; DEMO additionally serializes environment actions to obtain deterministic virtual-time ordering. PostgreSQL READ COMMITTED with explicit row locks is intentional. The clock is checked after lock acquisition. Money transactions never call external providers or Tiger. Bounded retries handle deadlocks and uniqueness races.
 
 Trades look up wallet-scoped idempotency before status checks and recheck after locks. The normalized economic request includes environment, market, side, quantity and maximum cost. Exact retries return the original execution after close; conflicting reuse fails. A transfer, position, executed trade, market version, event and outbox job commit together.
 
@@ -46,10 +44,6 @@ The minute aggregate counts only PRICE_CHANGED events, sums micro-R volume, and 
 
 ## Resolution providers and demo
 
-CFBD and CBBD adapters verify game ID, Rutgers participation, cutoff before game start and completed/final status. API errors, missing scores and missing credentials return pending. Because the providers do not expose a verified end timestamp in the used schema, `observedAt` means the adapter's final-status observation time; frozen sports windows must include that observation. CBBD's 2027 season represents the 2026–27 season. Weather/bus observations use a fixed server-configured normalized adapter. Concert/election absence requires channels checked, never a failed fetch.
+CFBD and CBBD adapters verify game ID, Rutgers participation, cutoff before game start and completed/final status. API errors, missing scores and missing credentials return pending. Because the providers do not expose a verified end timestamp in the used schema, `observedAt` means the adapter's final-status observation time; frozen sports windows must include that observation. CBBD's 2027 season represents the 2026–27 season. Bus observations come from the fixed, server-configured ingestion boundary.
 
-A run seeds six explicitly synthetic templates and 20 named bots. Bots use the exact buy engine and environment-scoped runner identity. The worker advances virtual time, creates purchases, closes at 120 scenario seconds and injects final fixture evidence at 150 seconds. Pause stops virtual-clock advancement. New run inserts new rows; it does not reset shared data. Deterministic replay consumes the ordered accepted action log, seed, initial clock and fixture version, remapping market/actor IDs. Human accepted purchases are included. Rejected inputs are not recorded and do not affect the replayed economic state. Concurrent load testing is separate.
-
-## Optional commitments
-
-A separate optional worker queues rule hashes while DRAFT and settlement receipt hashes after payout. It uses Solana Kit 8, v1 transactions and the memo program with the server-held development signer. RPC genesis identity must match official Devnet. Preflight/resource simulation stays enabled. Verification recomputes canonical SHA-256, checks confirmed successful transaction, expected signer, memo program and payload, and links to Devnet Explorer. Precommit status requires a confirmed block time strictly before `opensAt`. It proves publication/integrity, not correctness of the outcome. Chain downtime cannot roll back or block accounting; the worker is independent. A crash after submission but before signature persistence may repeat an identical public memo; it never repeats a payout.
+A run seeds Rutgers-sports and bus fixtures with 20 named bots. Bots use the exact buy engine and environment-scoped runner identity. The worker advances virtual time, creates purchases, closes at 120 scenario seconds and injects final fixture evidence at 150 seconds. Pause stops virtual-clock advancement. New run inserts new rows; it does not reset shared data. Deterministic replay consumes the ordered accepted action log, seed, initial clock and fixture version, remapping market/actor IDs. Human accepted purchases are included. Rejected inputs do not affect the replayed economic state. Concurrent load testing is separate.

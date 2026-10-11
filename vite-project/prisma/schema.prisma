@@ -2,7 +2,6 @@ generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
 }
-
 datasource db {
   provider = "postgresql"
 }
@@ -40,6 +39,9 @@ enum MarketStatus {
   VOIDED
 }
 
+// TEMPERATURE and RAINFALL remain in the database enum only so historical,
+// immutable ledger rows can still be read. They are not part of the product
+// contracts or API surface.
 enum Category {
   TEMPERATURE
   BUS_ARRIVAL
@@ -183,8 +185,8 @@ model Market {
   events               MarketEvent[]
   evidence             Evidence[]
   settlement           Settlement?
-  commitments          ChainCommitment[]
   presentationRun      PresentationDemoRun?
+  archive              MarketArchive?
 
   @@unique([environmentId, slug])
   @@unique([environmentId, generatorKey])
@@ -192,6 +194,17 @@ model Market {
   @@unique([id, environmentId])
   @@index([environmentId, status, category, closesAt])
   @@map("markets")
+}
+
+// An archive suppresses an expired disposable demo from the product surface
+// while keeping its immutable ledger and market-event audit trail intact.
+model MarketArchive {
+  marketId    String   @id @db.Uuid
+  archivedAt  DateTime @default(now()) @db.Timestamptz
+  reason      String
+  market      Market   @relation(fields: [marketId], references: [id], onDelete: Restrict)
+
+  @@map("market_archives")
 }
 
 // The short, live HackRU presentation uses the same Market, Trade, Position
@@ -319,19 +332,6 @@ model AutomationState {
   @@map("automation_states")
 }
 
-model WeatherObservation {
-  id String @id @default(uuid()) @db.Uuid
-  environmentId String @db.Uuid
-  station String
-  sourceId String
-  observedAt DateTime @db.Timestamptz
-  fetchedAt DateTime @default(now()) @db.Timestamptz
-  temperatureF Float
-  quality String
-  @@unique([environmentId, station, sourceId])
-  @@index([environmentId, station, observedAt])
-  @@map("weather_observations")
-}
 
 model Position {
   id              String   @id @default(uuid()) @db.Uuid
@@ -481,7 +481,6 @@ model Settlement {
   evidence            Evidence          @relation(fields: [evidenceId, environmentId, marketId], references: [id, environmentId, marketId], onDelete: Restrict)
   payouts             Payout[]
   resolver            Profile?          @relation(fields: [resolvedByProfileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  commitments         ChainCommitment[]
 
   @@unique([id, environmentId, marketId])
   @@unique([marketId, environmentId])
@@ -527,28 +526,4 @@ model DemoAction {
   @@unique([environmentId, sequence])
   @@index([actorProfileId], map: "demo_actor")
   @@map("demo_actions")
-}
-
-model ChainCommitment {
-  id                      String      @id @default(uuid()) @db.Uuid
-  environmentId           String      @db.Uuid
-  marketId                String      @db.Uuid
-  settlementId            String?     @db.Uuid
-  kind                    String
-  canonicalizationVersion String
-  payloadHash             String
-  network                 String      @default("devnet")
-  signerPublicKey         String
-  transactionSignature    String?
-  status                  String      @default("PENDING")
-  attempts                Int         @default(0)
-  nextAttemptAt           DateTime    @default(now()) @db.Timestamptz
-  confirmedAt             DateTime?   @db.Timestamptz
-  lastError               String?
-  market                  Market      @relation(fields: [marketId, environmentId], references: [id, environmentId], onDelete: NoAction, onUpdate: NoAction)
-  settlement              Settlement? @relation(fields: [settlementId, environmentId, marketId], references: [id, environmentId, marketId], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([marketId, kind])
-  @@index([settlementId], map: "chain_settlement")
-  @@map("chain_commitments")
 }

@@ -56,7 +56,7 @@ export async function busSnapshot(
             },
           },
         });
-        const observation = (row?.data as unknown as {
+        const observations = (row?.data as unknown as {
           provider: string;
           vehicleId: string;
           routeId: string | null;
@@ -70,7 +70,8 @@ export async function busSnapshot(
             item.vehicleId === settings.vehicleId &&
             item.routeId === settings.routeId,
           )
-          .sort((a, b) => Date.parse(b.sourceAt) - Date.parse(a.sourceAt))[0];
+          .sort((a, b) => Date.parse(a.sourceAt) - Date.parse(b.sourceAt)) ?? [];
+        const observation = observations.at(-1);
         if (!observation) return null;
         return {
           source: market.provider,
@@ -85,9 +86,10 @@ export async function busSnapshot(
             updatedAt: observation.sourceAt,
           }],
           stops: [settings.stop as BusSnapshot["stops"][number]],
+          routeGeometry: observations.map((item) => [item.longitude, item.latitude]),
         };
       }
-      const [observation] = await db.$queryRaw<
+      const observations = await db.$queryRaw<
         {
           vehicle_id: string;
           route_id: string;
@@ -106,7 +108,8 @@ export async function busSnapshot(
           AND measurement_time_basis='source'
           AND source_measured_at IS NOT NULL
           AND latitude IS NOT NULL AND longitude IS NOT NULL
-        ORDER BY source_measured_at DESC,id DESC LIMIT 1`;
+        ORDER BY source_measured_at DESC,id DESC LIMIT 80`;
+      const observation = observations[0];
       if (!observation) return null;
       const sourceAt = observation.source_measured_at.toISOString();
       return {
@@ -124,6 +127,10 @@ export async function busSnapshot(
           },
         ],
         stops: [settings.stop as BusSnapshot["stops"][number]],
+        routeGeometry: observations
+          .slice()
+          .reverse()
+          .map((item) => [item.longitude, item.latitude]),
       };
     }
     const row = await db.automationState.findUnique({

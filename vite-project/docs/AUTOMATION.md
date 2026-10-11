@@ -39,7 +39,6 @@ Run workers under a service supervisor; SIGINT/SIGTERM completes the current bat
 Generators are disabled until explicitly configured. Admin → Market automation offers validated settings, enable/disable, recent runs, provider-cache freshness, heartbeat, unresolved count, pending/failed jobs, and sync/retry. Changes affect future market rules. Disabling generation does not stop existing monitoring.
 
 ```sh
-npm run automation -- enable <environment-uuid> temperature
 npm run automation -- enable <environment-uuid> football
 npm run automation -- enable <environment-uuid> basketball
 npm run automation -- sync <environment-uuid>
@@ -50,14 +49,9 @@ The CLI reads optional `AUTOMATION_SETTINGS` JSON. Admin settings use the same s
 
 | Generator | Defaults and frozen resolution |
 | --- | --- |
-| Temperature | Reconcile every 15 minutes; create tomorrow after local noon. KSMQ, Somerville/Somerset Airport (40.62, -74.67), not a campus measurement. Close at target local midnight. |
 | Football | Discover every six hours, next five eligible games within 30 days. CFBD season uses calendar year. |
 | Basketball | Same discovery policy, CBBD men's NCAA basketball only; ending-year seasons, e.g. 2027 for 2026–27. No women's coverage is asserted. |
 | Bus | Read existing ingestion rows every five seconds. Requires verified stop coordinates and source timestamps; there is no second external poller. |
-
-Weather uses complete hourly Open-Meteo forecasts in Fahrenheit at the configured station coordinates to choose a threshold: `floor(meanF / 5 + 0.5) * 5` (halfway toward positive infinity). The saved forecast snapshot and calculation never move prices or resolve the market. Generation first requires recent station coverage. Missing forecasts/credentials/funds become visible failed/skipped runs.
-
-Settlement collects NWS observations every 30 minutes during the target day and backfills every 15 minutes afterward. Only finite Celsius values with NWS quality flag `V`, in [-90,60] °C, qualify. Deduplicate source IDs; average readings within each absolute one-hour interval, then equally average those hourly means. Luxon computes local midnight boundaries in America/New_York; DST days contain 23 or 25 buckets. Every bucket is required. Compare the unrounded mean strictly greater than threshold; equality is NO. Default reporting grace is two hours; after 36 hours beyond day end, missing coverage is VOID. Receipt raw evidence includes hourly means/counts and source/fetch timestamps. No forecast or reanalysis substitutes for observations.
 
 Sports stores provider/team/game IDs, opponent, orientation, season, original start and response provenance. Provider-specific TBD fields are respected. Cutoff is five minutes before the original start and is enforced by the existing quote/buy service. A changed schedule or reported start closes trading and never reopens it. Poll hourly when more than six hours away, every five minutes until 30 minutes before start, then every minute. Shared database response caches prevent viewer-driven requests. CFBD's current scoreboard supplements its season endpoint for in-progress status. Two identical explicit final score/status results at least 60 seconds apart are required. Ties/cancellations VOID; postponed or missing results wait at most 48 hours from original start. One follow-up review at 24 hours after settlement flags changed outcomes without rewriting financial history. Ongoing indefinite correction surveillance is not provided.
 

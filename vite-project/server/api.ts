@@ -4,7 +4,6 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z, ZodError } from "zod";
 import { db, AppError, ensure } from "./db";
 import {
-  categories,
   marketCategories,
   campuses,
   buyInput,
@@ -18,8 +17,8 @@ import { identity, scopedIdentity, admin, demoToken, localDemo, demoAdmin, demoA
 import { history, diagnostics } from "./tiger";
 import { newDemo } from "./demo";
 import { busSnapshot } from "./bus";
+import { createBusShowcase } from "./bus-showcase";
 import { createMarket, createMarketInput } from "./markets";
-import { verifyCommitment } from "./chain";
 import { automationStatus, configure, reconcileAutomation } from "./automation";
 import { types, nowFor } from "./automation/core";
 import { cleanupPresentationDemo, createPresentationDemo, finishPresentation, presentationStatus, startPresentation, tickPresentationRun, tickPresentationRuns } from "./presentation";
@@ -83,7 +82,11 @@ app.get("/api/config", (_req, res) =>
     localDemoAuth: localDemo,
     supabaseUrl: process.env.SUPABASE_URL ?? null,
     supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY ?? null,
-    mapStyle: process.env.MAP_STYLE_URL ?? null,
+    // Only Mapbox public tokens may be sent to the browser. Secret `sk.`
+    // tokens remain server-only and deliberately leave the map disabled.
+    mapboxToken: process.env.MAPBOX_KEY?.startsWith("pk.")
+      ? process.env.MAPBOX_KEY
+      : null,
   }),
 );
 app.get("/api/demo-admin/session", (req, res) => {
@@ -168,7 +171,10 @@ app.get("/api/markets", async (req, res) => {
     where: {
       environmentId: input.environmentId,
       category: input.category,
-      NOT: { category: { in: ["CONCERT", "STUDENT_ELECTION"] } },
+      NOT: [
+        { category: { in: ["CONCERT", "STUDENT_ELECTION", "TEMPERATURE", "RAINFALL"] } },
+        { archive: { isNot: null } },
+      ],
       status: input.status,
       title: input.search
         ? { contains: input.search, mode: "insensitive" }
@@ -196,7 +202,15 @@ app.get("/api/presentation/:marketId", async (req, res) => {
   // a serverless presentation vivid while its detail page is open.
   res.json(run.status === "RUNNING" ? await tickPresentationRun(run.id) : run);
 });
-app.post("/api/presentation/create", async (req, res) => { demoAdmin(req); res.json(await createPresentationDemo()); });
+app.post("/api/presentation/create", async (req, res) => {
+  demoAdmin(req);
+  const run = await createPresentationDemo();
+  res.json({ market: run.market, run: { id: run.id, status: run.status } });
+});
+app.post("/api/bus/showcase", async (req, res) => {
+  demoAdmin(req);
+  res.json({ market: await createBusShowcase() });
+});
 app.post("/api/presentation/:marketId/start", async (req, res) => { demoAdmin(req); res.json(await startPresentation(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/finish", async (req, res) => { demoAdmin(req); res.json(await finishPresentation(id(req.params.marketId))); });
 app.post("/api/presentation/:marketId/cleanup", async (req, res) => { demoAdmin(req); res.json(await cleanupPresentationDemo(id(req.params.marketId))); });
@@ -378,23 +392,8 @@ app.get("/api/markets/:id/receipt", async (req, res) => {
     receipt: s.receipt,
     receiptHash: s.receiptHash,
     personal,
-    verification: (await db.chainCommitment.findUnique({
-      where: { marketId_kind: { marketId, kind: "SETTLEMENT" } },
-      select: { status: true, transactionSignature: true },
-    })) ?? { status: "UNAVAILABLE" },
   });
 });
-app.get("/api/markets/:id/verify", async (req, res) =>
-  res.json(
-    await verifyCommitment(
-      id(req.params.id),
-      z
-        .enum(["RULES", "SETTLEMENT"])
-        .default("SETTLEMENT")
-        .parse(req.query.kind),
-    ),
-  ),
-);
 app.get("/api/markets/:id/bus", async (req, res) =>
   res.json({ snapshot: await busSnapshot(id(req.params.id)) }),
 );

@@ -30,7 +30,7 @@ export function AutomationAdmin({
   onError: (s: string) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null),
-    [type, setType] = useState("temperature"),
+    [type, setType] = useState("football"),
     [settings, setSettings] = useState("{}"),
     [enabled, setEnabled] = useState(false);
   useEffect(() => {
@@ -108,7 +108,7 @@ export function AutomationAdmin({
             setEnabled(false);
           }}
         >
-          {["temperature", "football", "basketball", "bus"].map((t) => (
+          {["football", "basketball", "bus"].map((t) => (
             <option key={t}>{t}</option>
           ))}
         </select>

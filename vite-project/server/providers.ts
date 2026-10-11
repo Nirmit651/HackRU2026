@@ -111,7 +111,7 @@ export async function fetchEvidence(
     );
     return raw ? normalizeSports(provider, raw, market, new Date()) : null;
   }
-  // Teammates can supply weather/bus observations through this fixed, server-owned
+  // Teammates can supply bus observations through this fixed, server-owned
   // endpoint. No user-supplied URL is fetched. Missing data remains pending.
   if (process.env.EVIDENCE_ADAPTER_URL) {
     const url = new URL(process.env.EVIDENCE_ADAPTER_URL);

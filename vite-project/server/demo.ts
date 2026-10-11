@@ -20,8 +20,6 @@ import { configure } from "./automation";
 import { consumeTelemetry, generateScheduledMarkets, monitorBus } from "./automation/bus";
 const start = new Date("2026-10-10T16:00:00.000Z");
 export const titles = [
-  "Will the demo station reach 75°F?",
-  "Will the demo station record 0.10 inches of rain?",
   "Will Rutgers win the simulated football game?",
 ];
 
@@ -90,17 +88,13 @@ export async function newDemo(
     const rule = ruleSchema.parse({
       canonicalizationVersion: "rutgers-v1",
       yesCondition:
-        category === "TEMPERATURE"
-          ? "Observed temperature is at least 75 degrees Fahrenheit."
-          : category === "RAINFALL"
-            ? "Accumulated rainfall is at least 0.10 inches."
-            : "The named synthetic event has a final positive result.",
+        "The named synthetic event has a final positive result.",
       provider,
       externalEventId,
       windowStart: windowStart.toISOString(),
       windowEnd: windowEnd.toISOString(),
       cutoff: closesAt.toISOString(),
-      units: category === "TEMPERATURE" ? "F" : category === "RAINFALL" ? "in" : "boolean",
+      units: "boolean",
       rounding: "Compare the unrounded observed value.",
       finality: "FINAL",
       missingPolicy: "PENDING_THEN_VOID",
@@ -108,8 +102,7 @@ export async function newDemo(
       cancellationPolicy: "VOID",
       tiePolicy: "NO",
       postponementPolicy: "VOID",
-      threshold: category === "TEMPERATURE" ? 75 : category === "RAINFALL" ? 0.1 : undefined,
-      comparison: category === "TEMPERATURE" || category === "RAINFALL" ? "GTE" : "TRUE",
+      comparison: "TRUE",
     });
     const market = await transaction(async (tx) => {
       await lockEnvironment(tx, env.id);
@@ -214,17 +207,8 @@ export function fixture(
     isFinal: true,
     sourceUrl: m.sourceUrl,
     normalizedData: {
-      units:
-        m.category === "TEMPERATURE"
-          ? "F"
-          : m.category === "RAINFALL"
-            ? "in"
-            : "boolean",
-      ...(m.category === "TEMPERATURE"
-        ? { value: 77 }
-        : m.category === "RAINFALL"
-          ? { value: 0.06 }
-          : { result: true }),
+      units: "boolean",
+      result: true,
       channelsChecked: ["Synthetic official-channel fixture"],
     },
     rawPayload: { fixtureVersion: "campus-v1", synthetic: true },

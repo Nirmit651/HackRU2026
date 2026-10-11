@@ -115,8 +115,13 @@ export function MarketChart({
             value: Number(p.volume) / 1e6,
           })),
         );
-        chart.timeScale().fitContent();
         chart.timeScale().applyOptions({ rightOffset: 0, fixLeftEdge: true, fixRightEdge: true });
+        // Pin history at logical index zero so the chart always begins at the
+        // left edge instead of centering a short history in the viewport.
+        chart.timeScale().setVisibleLogicalRange({
+          from: 0,
+          to: Math.max(points.length - 1, 0) + 2,
+        });
         lastTime = points.at(-1)?.time ?? 0;
       } else
         for (const p of points.filter((p) => p.time >= lastTime)) {

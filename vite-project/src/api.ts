@@ -4,7 +4,7 @@ export interface Config {
   localDemoAuth: boolean;
   supabaseUrl: string | null;
   supabasePublishableKey: string | null;
-  mapStyle: string | null;
+  mapboxToken: string | null;
 }
 export async function configure() {
   const c = await request<Config>("/config");

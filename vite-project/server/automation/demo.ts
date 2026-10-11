@@ -3,10 +3,9 @@ import { db, transaction } from "../db";
 import { reconcile } from "../engine";
 import { setDemoTime } from "../demo";
 import { configure } from "./index";
-import { generateWeather, monitorWeather } from "./weather";
 import { generateSports, monitorSports } from "./sports";
 import { consumeTelemetry, monitorBus } from "./bus";
-import { dayInterval, add, iso } from "./core";
+import { add, iso } from "./core";
 import type { Game } from "./providers";
 export async function demoEnvironment() {
   const start = new Date("2026-10-10T16:00:00Z");
@@ -56,15 +55,6 @@ export const demoGame = (start: string): Game => ({
 export async function runAutomationDemo() {
   const env = await demoEnvironment(),
     start = env.virtualNow!;
-  const weather = await configure(env.id, "temperature", true, {});
-  await generateWeather(weather, {
-    mean: 64,
-    raw: { synthetic: true, mean: 64 },
-  });
-  await generateWeather(weather, {
-    mean: 100,
-    raw: { synthetic: true, mean: 100 },
-  });
   const sports = await configure(env.id, "football", true, {}),
     game = demoGame(iso(add(start, 3600)));
   await generateSports(sports, [game]);
@@ -128,25 +118,6 @@ export async function runAutomationDemo() {
   await monitorSports(sportsMarket, final);
   await demoTime(env.id, add(start, 7261));
   await monitorSports(sportsMarket, final);
-  const interval = dayInterval("2026-10-11");
-  for (let t = +interval.start; t < +interval.end; t += 3600000)
-    await db.weatherObservation.create({
-      data: {
-        environmentId: env.id,
-        station: "KSMQ",
-        sourceId: `demo:${t}`,
-        observedAt: new Date(t),
-        fetchedAt: new Date(t),
-        temperatureF: 66,
-        quality: "V",
-      },
-    });
-  await demoTime(env.id, add(interval.end, 7200));
-  await monitorWeather(
-    await db.market.findFirstOrThrow({
-      where: { environmentId: env.id, category: "TEMPERATURE" },
-    }),
-  );
   return {
     environmentId: env.id,
     markets: await db.market.findMany({

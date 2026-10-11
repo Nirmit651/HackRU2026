@@ -39,7 +39,7 @@ test("two clients: entry, buy, chart recovery, settlement, receipt and cash lead
     animations: "disabled",
   });
   const m = await db.market.findFirstOrThrow({
-    where: { environmentId: env.id, category: "TEMPERATURE" },
+    where: { environmentId: env.id, category: "VARSITY_SPORTS" },
   });
   await setDemoTime(env.id, new Date(+m.opensAt + 180000));
   await settle(m.id, fixture(m, new Date(+m.opensAt + 180000)));

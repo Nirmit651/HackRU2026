@@ -25,7 +25,7 @@ let env: Awaited<ReturnType<typeof newDemo>>,
 beforeAll(async () => {
   env = await newDemo(4, `test-${randomUUID()}`);
   market = await db.market.findFirstOrThrow({
-    where: { environmentId: env.id, category: "TEMPERATURE" },
+    where: { environmentId: env.id, category: "VARSITY_SPORTS" },
   });
   profile = await db.profile.create({
     data: {
@@ -77,7 +77,7 @@ describe("PostgreSQL financial invariants", () => {
   });
   it("allows adding to the held side but not opening the opposite side", async () => {
     const e = await newDemo(),
-      m = await db.market.findFirstOrThrow({ where: { environmentId: e.id, category: "TEMPERATURE" } });
+      m = await db.market.findFirstOrThrow({ where: { environmentId: e.id, category: "VARSITY_SPORTS" } });
     await grantWallet(profile.id, e.id);
     await buy(actor(), { ...order(), environmentId: e.id, marketId: m.id, side: "YES" });
     await expect(buy(actor(), { ...order(), environmentId: e.id, marketId: m.id, side: "YES" }))
@@ -170,7 +170,7 @@ describe("PostgreSQL financial invariants", () => {
     for (const outcome of ["NO", "VOID"]) {
       const e = await newDemo(),
         m = await db.market.findFirstOrThrow({
-          where: { environmentId: e.id, category: "TEMPERATURE" },
+          where: { environmentId: e.id, category: "VARSITY_SPORTS" },
         });
       await grantWallet(profile.id, e.id);
       await buy(actor(), {
@@ -276,7 +276,7 @@ describe("PostgreSQL financial invariants", () => {
       slug: "clock-test",
       title: "Authoritative clock lock race",
       description: "test",
-      category: "RAINFALL",
+      category: "VARSITY_SPORTS",
       opensAt: open.toISOString(),
       closesAt: close.toISOString(),
       expectedResolutionAt: end.toISOString(),

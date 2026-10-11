@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { presentationEventId, presentationOutcome, presentationRuleFor, timerYesSignal } from "../server/presentation";
+import { presentationEventId, presentationFundingKey, presentationOutcome, presentationRuleFor, timerYesSignal } from "../server/presentation";
 
 describe("presentation timer signal", () => {
   it("starts neutral and approaches certainty without forcing 100%", () => {
@@ -31,5 +31,9 @@ describe("presentation settlement rule", () => {
     const eventId = presentationEventId(runId);
     expect(eventId).toBe("presentation-f6fd29b3-6df6-4e90-a3c2-61d5d6c23401");
     expect(presentationRuleFor(deadline, deadline, eventId).externalEventId).toBe(eventId);
+  });
+  it("uses a unique immutable funding key for every presentation run", () => {
+    expect(presentationFundingKey("run-a")).toBe("fund:presentation:run-a");
+    expect(presentationFundingKey("run-a")).not.toBe(presentationFundingKey("run-b"));
   });
 });

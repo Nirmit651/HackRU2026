@@ -4,7 +4,6 @@ import { ruleSchema } from "../../shared/contracts";
 import type { AutomationJob } from "../../generated/prisma/client";
 import { types, settingsSchema, nowFor, add, iso, finish } from "./core";
 import { enqueue, executeOne } from "./queue";
-import { generateWeather, monitorWeather } from "./weather";
 import { generateSports, monitorSports, reviewSports } from "./sports";
 import { consumePipeline, monitorBus } from "./bus";
 import { randomUUID } from "node:crypto";
@@ -182,14 +181,10 @@ export async function handleJob(job: AutomationJob): Promise<Date | void> {
     });
     try {
       const summary =
-        c.type === "temperature"
-          ? await generateWeather(c)
-          : c.type === "bus"
-            ? await consumePipeline(c)
-            : await generateSports(c);
+        c.type === "bus" ? await consumePipeline(c) : await generateSports(c);
       const next = add(
         at,
-        c.type === "bus" ? 5 : c.type === "temperature" ? 900 : 21600,
+        c.type === "bus" ? 5 : 21600,
       );
       await db.automationConfig.update({
         where: { id: c.id },
@@ -250,7 +245,6 @@ export async function handleJob(job: AutomationJob): Promise<Date | void> {
   const r = ruleSchema.parse(m.resolutionRule);
   if (payload.visitId && payload.visitId !== r.automation?.settings.visitId)
     return;
-  if (r.automation?.type === "temperature") return monitorWeather(m);
   if (r.automation?.type === "bus") {
     const visit = await db.automationState.findUnique({
       where: {

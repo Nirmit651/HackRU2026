@@ -6,10 +6,6 @@ export function marketTemplate(category: Category, environmentId: string) {
     windowStart = new Date(Date.now() + 3601000).toISOString(),
     windowEnd = new Date(Date.now() + 7200000).toISOString();
   const yes: Record<Category, string> = {
-    TEMPERATURE:
-      "The named station observes a temperature of at least 75°F during the specified window.",
-    RAINFALL:
-      "The named station observes at least 0.10 inches of accumulated precipitation during the window.",
     BUS_ARRIVAL:
       "The identified route and trip reaches the named stop before the observation window ends.",
     VARSITY_SPORTS:
@@ -23,12 +19,7 @@ export function marketTemplate(category: Category, environmentId: string) {
     windowStart,
     windowEnd,
     cutoff: closesAt,
-    units:
-      category === "TEMPERATURE"
-        ? "F"
-        : category === "RAINFALL"
-          ? "in"
-          : "boolean",
+    units: "boolean",
     rounding: "Compare unrounded observations.",
     finality: "FINAL",
     missingPolicy: "PENDING_THEN_VOID",
@@ -36,13 +27,7 @@ export function marketTemplate(category: Category, environmentId: string) {
     cancellationPolicy: "VOID",
     tiePolicy: "NO",
     postponementPolicy: "VOID",
-    comparison:
-      category === "TEMPERATURE" || category === "RAINFALL" ? "GTE" : "TRUE",
-    ...(category === "TEMPERATURE"
-      ? { threshold: 75 }
-      : category === "RAINFALL"
-        ? { threshold: 0.1 }
-        : {}),
+    comparison: "TRUE",
   });
   return {
     environmentId,

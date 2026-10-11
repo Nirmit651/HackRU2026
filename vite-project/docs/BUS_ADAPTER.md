@@ -8,6 +8,6 @@ Return `source`, `isSimulated`, `observedAt`, `receivedAt`, `vehicles` (ID, rout
 
 For settlement, return the normalized `ProviderEvidence` contract through `EVIDENCE_ADAPTER_URL?marketId=...`, or submit it for authorized manual review. Match the frozen provider, external event/route/trip/stop identifier, units, window and source URL. A route marker passing near a stop is insufficient evidence. Only persist the required final observation and private raw payload; high-frequency telemetry stays with ingestion.
 
-DEMO uses explicit static synthetic Livingston Plaza coordinates. This fixture is not an assertion of a real stop survey or vehicle location. Configure `MAP_STYLE_URL` with licensed tiles; MapLibre preserves provider attribution. An empty style URL displays fixture coordinates and an honest unconfigured state.
+DEMO uses explicit static synthetic Livingston Plaza coordinates. This fixture is not an assertion of a real stop survey or vehicle location. Configure the public `MAPBOX_KEY` (`pk.` prefix) for the Mapbox basemap. Without it, the UI displays an honest unavailable state and coordinates.
 
 Reference for teammate coordination: https://github.com/JoyousJohn/rubus-client . Verify any upstream API/version with its owner before connecting.

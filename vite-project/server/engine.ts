@@ -39,7 +39,7 @@ export async function authorizeActor(
     where: { id: actor.profileId },
   });
   if (actor.role === "RUNNER") {
-    const env = await tx.environment.findUniqueOrThrow({
+    await tx.environment.findUniqueOrThrow({
       where: { id: environmentId },
     });
     ensure(

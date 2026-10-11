@@ -9,6 +9,7 @@ export default defineConfig([
     "node_modules",
     "test-results",
     "playwright-report",
+    ".vercel-api",
   ]),
   js.configs.recommended,
   ...tseslint.configs.recommended,

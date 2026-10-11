@@ -12,8 +12,6 @@ ALTER TABLE payouts ADD CONSTRAINT payout_bounds CHECK ("amountMicros">=0 AND "o
 ALTER TABLE market_events ADD CONSTRAINT event_bounds CHECK (version>0 AND "tradeAmountMicros">=0 AND "yesPrice" BETWEEN 0 AND 1 AND ((kind='PRICE_CHANGED')=("tradeId" IS NOT NULL)) AND (kind='PRICE_CHANGED' OR "tradeAmountMicros"=0));
 ALTER TABLE demo_actions ADD FOREIGN KEY ("environmentId") REFERENCES environments(id);
 ALTER TABLE demo_actions ADD FOREIGN KEY ("actorProfileId") REFERENCES profiles(id);
-ALTER TABLE chain_commitments ADD FOREIGN KEY ("marketId","environmentId") REFERENCES markets(id,"environmentId");
-ALTER TABLE chain_commitments ADD FOREIGN KEY ("settlementId","environmentId","marketId") REFERENCES settlements(id,"environmentId","marketId");
 ALTER TABLE evidence ADD FOREIGN KEY ("submittedByProfileId") REFERENCES profiles(id);
 ALTER TABLE settlements ADD FOREIGN KEY ("resolvedByProfileId") REFERENCES profiles(id);
 ALTER TABLE market_events ADD FOREIGN KEY ("tradeId") REFERENCES trades(id);
@@ -32,7 +30,7 @@ CREATE TRIGGER environment_protection BEFORE UPDATE ON environments FOR EACH ROW
 CREATE FUNCTION protect_wallet() RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$ BEGIN
  IF (NEW."openingBalanceMicros",NEW.kind,NEW."environmentId",NEW."profileId") IS DISTINCT FROM (OLD."openingBalanceMicros",OLD.kind,OLD."environmentId",OLD."profileId") THEN RAISE EXCEPTION 'immutable wallet identity'; END IF;RETURN NEW;END $$;
 CREATE TRIGGER wallet_protection BEFORE UPDATE ON wallets FOR EACH ROW EXECUTE FUNCTION protect_wallet();
-DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['profiles','environments','wallets','markets','positions','trades','transfers','market_events','outbox_deliveries','evidence','settlements','payouts','demo_actions','chain_commitments'] LOOP
+DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['profiles','environments','wallets','markets','positions','trades','transfers','market_events','outbox_deliveries','evidence','settlements','payouts','demo_actions'] LOOP
  EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',t);
  IF EXISTS(SELECT FROM pg_roles WHERE rolname='anon') THEN EXECUTE format('REVOKE ALL ON %I FROM anon, authenticated',t); END IF;
  END LOOP;
