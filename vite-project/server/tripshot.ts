@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- protobuf bindings intentionally expose generated dynamic objects. */
 /** Server-only Rutgers TripShot adapter.  Feed URLs are deliberately constants, never request input. */
 import AdmZip from "adm-zip";
+import { createHash } from "node:crypto";
 import GtfsRealtimeBindings from "gtfs-realtime-bindings";
+import { db, transaction } from "./db";
 
 const REGION = "CA558DDC-D7F2-4B48-9CAC-DEEA1134F820";
 const STATIC_URL = `https://rutgers.tripshot.com/v1/gtfs.zip?regionId=${REGION}`;
@@ -20,6 +22,7 @@ export type FrozenTripSnapshot = Pick<LiveTransit, "observedAt" | "tripFeedAt" |
 
 let staticCache: { value: StaticGtfs; at: number } | undefined;
 let refreshStatic: Promise<StaticGtfs> | undefined;
+let refreshDatabaseStatic: Promise<StaticGtfs> | undefined;
 let realtimeCache: { value: LiveTransit; at: number } | undefined;
 let refreshRealtime: Promise<LiveTransit> | undefined;
 
@@ -56,9 +59,97 @@ export function parseGtfsZip(raw: Buffer): StaticGtfs {
   return { stops, routes, trips, stopTimes, shapes, collegeStops: findCollegeAveStops(stops) };
 }
 async function fetchBytes(url: string) { const response = await fetch(url, { signal: AbortSignal.timeout(8_000), headers: { Accept: "application/octet-stream" } }); if (!response.ok) throw new Error(`TRIPSHOT_HTTP_${response.status}`); const body = Buffer.from(await response.arrayBuffer()); if (!body.length || body.length > 25_000_000) throw new Error("TRIPSHOT_INVALID_SIZE"); return body; }
+type CachedFeed = { feed_hash: string; fetched_at: Date };
+type CachedRoute = { route_id: string; short_name: string; long_name: string; color: string | null };
+type CachedStop = { stop_id: string; stop_name: string; latitude: number; longitude: number };
+type CachedTrip = { trip_id: string; route_id: string; shape_id: string | null };
+type CachedShape = { shape_id: string; points: unknown };
+
+/** The static GTFS cache is server-only. A cold API process reads this before it ever considers downloading the ZIP. */
+async function cachedStaticGtfs(): Promise<{ value: StaticGtfs; fetchedAt: number } | undefined> {
+  try {
+    const [feed] = await db.$queryRaw<CachedFeed[]>`SELECT feed_hash, fetched_at FROM public.tripshot_static_feeds WHERE is_active ORDER BY fetched_at DESC LIMIT 1`;
+    if (!feed) return undefined;
+    const [routes, stops, trips, shapes] = await Promise.all([
+      db.$queryRaw<CachedRoute[]>`SELECT route_id, short_name, long_name, color FROM public.tripshot_gtfs_routes WHERE feed_hash=${feed.feed_hash}`,
+      db.$queryRaw<CachedStop[]>`SELECT stop_id, stop_name, latitude, longitude FROM public.tripshot_gtfs_stops WHERE feed_hash=${feed.feed_hash}`,
+      db.$queryRaw<CachedTrip[]>`SELECT trip_id, route_id, shape_id FROM public.tripshot_gtfs_trips WHERE feed_hash=${feed.feed_hash}`,
+      db.$queryRaw<CachedShape[]>`SELECT shape_id, points FROM public.tripshot_gtfs_shapes WHERE feed_hash=${feed.feed_hash}`,
+    ]);
+    if (!routes.length || !stops.length || !trips.length || !shapes.length) return undefined;
+    const parsedStops = stops.map((stop) => ({ id: stop.stop_id, name: stop.stop_name, latitude: Number(stop.latitude), longitude: Number(stop.longitude) }));
+    const parsedShapes = new Map(shapes.flatMap((shape) => {
+      if (!Array.isArray(shape.points)) return [];
+      const points = shape.points.flatMap((point): [number, number][] => Array.isArray(point) && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])) ? [[Number(point[0]), Number(point[1])]] : []);
+      return points.length ? [[shape.shape_id, points] as const] : [];
+    }));
+    const value: StaticGtfs = {
+      stops: parsedStops,
+      routes: new Map(routes.map((route) => [route.route_id, { id: route.route_id, shortName: route.short_name, longName: route.long_name, color: route.color ?? undefined }])),
+      trips: new Map(trips.map((trip) => [trip.trip_id, { id: trip.trip_id, routeId: trip.route_id, shapeId: trip.shape_id ?? undefined }])),
+      shapes: parsedShapes,
+      stopTimes: new Map(),
+      collegeStops: findCollegeAveStops(parsedStops),
+    };
+    return value.collegeStops.length ? { value, fetchedAt: +new Date(feed.fetched_at) } : undefined;
+  } catch (error) {
+    console.warn("TripShot static cache read failed", error instanceof Error ? error.message : error);
+    return undefined;
+  }
+}
+
+async function persistStaticGtfs(value: StaticGtfs, raw: Buffer) {
+  const feedHash = createHash("sha256").update(raw).digest("hex");
+  const routes = [...value.routes.values()].map((route) => ({ route_id: route.id, short_name: route.shortName, long_name: route.longName, color: route.color ?? null }));
+  const stops = value.stops.map((stop) => ({ stop_id: stop.id, stop_name: stop.name, latitude: stop.latitude, longitude: stop.longitude }));
+  const shapes = [...value.shapes].map(([shapeId, points]) => ({ shape_id: shapeId, points, point_count: points.length }));
+  const trips = [...value.trips.values()].filter((trip) => value.routes.has(trip.routeId)).map((trip) => ({ trip_id: trip.id, route_id: trip.routeId, shape_id: trip.shapeId && value.shapes.has(trip.shapeId) ? trip.shapeId : null }));
+  await transaction(async (tx) => {
+    await tx.$executeRaw`INSERT INTO public.tripshot_static_feeds (feed_hash, source_url, is_active, route_count, stop_count, trip_count, shape_count)
+      VALUES (${feedHash}, ${STATIC_URL}, false, ${routes.length}, ${stops.length}, ${trips.length}, ${shapes.length})
+      ON CONFLICT (feed_hash) DO UPDATE SET fetched_at=now(), source_url=EXCLUDED.source_url`;
+    await tx.$executeRaw`INSERT INTO public.tripshot_gtfs_routes (feed_hash, route_id, short_name, long_name, color)
+      SELECT ${feedHash}, item.route_id, item.short_name, item.long_name, item.color
+      FROM jsonb_to_recordset(${JSON.stringify(routes)}::jsonb) AS item(route_id text, short_name text, long_name text, color text)
+      ON CONFLICT (feed_hash, route_id) DO NOTHING`;
+    await tx.$executeRaw`INSERT INTO public.tripshot_gtfs_stops (feed_hash, stop_id, stop_name, latitude, longitude)
+      SELECT ${feedHash}, item.stop_id, item.stop_name, item.latitude, item.longitude
+      FROM jsonb_to_recordset(${JSON.stringify(stops)}::jsonb) AS item(stop_id text, stop_name text, latitude double precision, longitude double precision)
+      ON CONFLICT (feed_hash, stop_id) DO NOTHING`;
+    await tx.$executeRaw`INSERT INTO public.tripshot_gtfs_shapes (feed_hash, shape_id, points, point_count)
+      SELECT ${feedHash}, item.shape_id, item.points, item.point_count
+      FROM jsonb_to_recordset(${JSON.stringify(shapes)}::jsonb) AS item(shape_id text, points jsonb, point_count integer)
+      ON CONFLICT (feed_hash, shape_id) DO NOTHING`;
+    await tx.$executeRaw`INSERT INTO public.tripshot_gtfs_trips (feed_hash, trip_id, route_id, shape_id)
+      SELECT ${feedHash}, item.trip_id, item.route_id, item.shape_id
+      FROM jsonb_to_recordset(${JSON.stringify(trips)}::jsonb) AS item(trip_id text, route_id text, shape_id text)
+      ON CONFLICT (feed_hash, trip_id) DO NOTHING`;
+    await tx.$executeRaw`UPDATE public.tripshot_static_feeds SET is_active=false WHERE is_active AND feed_hash<>${feedHash}`;
+    await tx.$executeRaw`UPDATE public.tripshot_static_feeds SET is_active=true, fetched_at=now() WHERE feed_hash=${feedHash}`;
+  });
+}
+
+async function refreshStaticFromTripShot() {
+  if (!refreshDatabaseStatic) refreshDatabaseStatic = fetchBytes(STATIC_URL).then(async (raw) => {
+    const value = parseGtfsZip(raw);
+    if (!value.collegeStops.length) throw new Error("COLLEGE_AVE_STOP_NOT_FOUND");
+    await persistStaticGtfs(value, raw);
+    staticCache = { value, at: Date.now() };
+    return value;
+  }).finally(() => { refreshDatabaseStatic = undefined; });
+  return refreshDatabaseStatic;
+}
 async function staticGtfs() {
   if (staticCache && Date.now() - staticCache.at < STATIC_TTL_MS) return staticCache.value;
-  if (!refreshStatic) refreshStatic = fetchBytes(STATIC_URL).then(parseGtfsZip).then((value) => { if (!value.collegeStops.length) throw new Error("COLLEGE_AVE_STOP_NOT_FOUND"); console.info("TripShot College Ave stops", value.collegeStops.map((s) => `${s.id}:${s.name}`).join(", ")); staticCache = { value, at: Date.now() }; return value; }).catch((error) => { if (staticCache) return staticCache.value; throw error; }).finally(() => { refreshStatic = undefined; });
+  if (!refreshStatic) refreshStatic = (async () => {
+    const cached = await cachedStaticGtfs();
+    if (cached) {
+      staticCache = { value: cached.value, at: cached.fetchedAt };
+      if (Date.now() - cached.fetchedAt >= STATIC_TTL_MS) void refreshStaticFromTripShot().catch((error) => console.warn("TripShot static cache refresh failed", error instanceof Error ? error.message : error));
+      return cached.value;
+    }
+    return refreshStaticFromTripShot();
+  })().catch((error) => { if (staticCache) return staticCache.value; throw error; }).finally(() => { refreshStatic = undefined; });
   return refreshStatic;
 }
 const seconds = (v: unknown) => typeof v === "number" ? v : Number(v ?? 0);
@@ -105,6 +196,12 @@ async function live(): Promise<LiveTransit> {
   return refreshRealtime;
 }
 export const tripshotLive = live;
+
+/** Operational warm-up hook: refreshes the server-only static cache without fetching live vehicle data. */
+export async function refreshTripshotStaticCache() {
+  const value = await refreshStaticFromTripShot();
+  return { routes: value.routes.size, stops: value.stops.length, trips: value.trips.size, shapes: value.shapes.size };
+}
 
 /** Reads the shared live cache but renders only the vehicle/trip frozen into a market. */
 export async function tripshotFrozenTrip(tripId: string, vehicleId: string): Promise<FrozenTripSnapshot> {
