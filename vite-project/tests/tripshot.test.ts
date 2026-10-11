@@ -32,4 +32,12 @@ describe("TripShot GTFS selection", () => {
     expect(selectNextEligibleArrival(live)?.arrival.tripId).toBe("outside");
     expect(selectNextEligibleArrival({ ...live, vehicles: [live.vehicles[0]] } as any)).toBeNull();
   });
+  it("does not join a predicted next trip to the vehicle's current trip", () => {
+    const live = {
+      targetStops: [stops[0]],
+      arrivals: [{ tripId: "next-trip", routeId: "A", vehicleId: "1", arrivalAt: "2026-10-10T16:02:00.000Z", feedTimestamp: "2026-10-10T16:00:00.000Z", stopId: "a" }],
+      vehicles: [{ id: "1", routeId: "A", tripId: "current-trip", latitude: 40.51, longitude: -74.41, updatedAt: "2026-10-10T16:00:00.000Z" }],
+    } as any;
+    expect(selectNextEligibleArrival(live)).toBeNull();
+  });
 });

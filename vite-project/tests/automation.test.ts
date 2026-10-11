@@ -202,18 +202,18 @@ describe("scheduled bus markets", () => {
   });
 });
 describe("frozen next-bus break markets", () => {
-  const at = new Date(base), row = (vehicle: string, route: string, sec: number, latitude: number, longitude = -74.44866) => ({ vehicle_id: vehicle, route_id: route, latitude, longitude, source_measured_at: new Date(base + sec * 1000), retrieved_at: new Date(base + sec * 1000) });
-  const telemetry = (sec: number, latitude = 40.50073): Telemetry => ({ provider: "rubus", vehicleId: "frozen", routeId: "LX", sourceAt: new Date(base + sec * 1000).toISOString(), receivedAt: new Date(base + sec * 1000).toISOString(), latitude, longitude: -74.44866 });
+  const at = new Date(base), row = (vehicle: string, route: string, sec: number, latitude: number, longitude = -74.452402128) => ({ vehicle_id: vehicle, route_id: route, latitude, longitude, source_measured_at: new Date(base + sec * 1000), retrieved_at: new Date(base + sec * 1000) });
+  const telemetry = (sec: number, latitude = 40.503664735): Telemetry => ({ provider: "rubus", vehicleId: "frozen", routeId: "LX", sourceAt: new Date(base + sec * 1000).toISOString(), receivedAt: new Date(base + sec * 1000).toISOString(), latitude, longitude: -74.452402128 });
   const market = { routeId: "LX", stop: collegeAveStudentCenter, opensAt: at.toISOString() }, settings = { enterMeters: 65, exitMeters: 75, maxGapSeconds: 60, latenessSeconds: 30, durationSeconds: 600 };
   beforeEach(() => { queryRaw.mockReset(); findExistingMarket.mockReset(); findLiveEnvironment.mockReset(); });
   it("selects the lowest valid ETA and falls back conservatively without movement history", () => {
-    const latest = [row("far", "A", -10, 40.51), row("near", "B", -10, 40.503), row("inside", "C", -10, 40.50073)];
+    const latest = [row("far", "A", -10, 40.51), row("near", "B", -10, 40.503), row("inside", "C", -10, 40.503664735)];
     expect(selectNextBusCandidate(latest, latest, at)).toMatchObject({ vehicleId: "near", routeId: "B", etaMethod: "conservative-fallback-speed" });
     const moving = [row("fast", "A", -60, 40.51), row("fast", "A", -10, 40.503), row("slow", "B", -60, 40.504), row("slow", "B", -10, 40.503)];
     expect(selectNextBusCandidate([moving[1], moving[3]], moving, at)?.vehicleId).toBe("fast");
   });
   it("rejects stale, duplicate, and already-arrived candidates", () => {
-    expect(selectNextBusCandidate([row("old", "A", -100, 40.51), row("here", "B", -1, 40.50073)], [], at)).toBeNull();
+    expect(selectNextBusCandidate([row("old", "A", -100, 40.51), row("here", "B", -1, 40.503664735)], [], at)).toBeNull();
   });
   it("replays an active frozen market without selecting a replacement bus", async () => {
     findLiveEnvironment.mockResolvedValue({ id: "live" });

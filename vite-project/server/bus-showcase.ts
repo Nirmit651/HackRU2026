@@ -3,7 +3,9 @@ import { meters } from "./automation/bus-state";
 import { db, ensure } from "./db";
 import { selectNextEligibleArrival, tripshotLive } from "./tripshot";
 
-export const collegeAveStudentCenter = { id: "college-avenue-student-center", name: "College Avenue Student Center", latitude: 40.50073, longitude: -74.44866, sourceUrl: "https://rutgers.transloc.com/" };
+// Official TripShot static GTFS stop 10035. Keep the legacy position-based
+// fallback aligned with the same destination used by the live selector.
+export const collegeAveStudentCenter = { id: "10035", name: "College Avenue Student Center", latitude: 40.503664735, longitude: -74.452402128, sourceUrl: "https://rutgers.tripshot.com/" };
 const CANDIDATE_FRESH_SECONDS = 90;
 const FALLBACK_SPEED_MPS = 4.5; // Conservative urban bus speed when two useful fixes are unavailable.
 const MAX_ETA_SECONDS = 2 * 60 * 60;

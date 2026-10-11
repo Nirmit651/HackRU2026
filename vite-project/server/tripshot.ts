@@ -181,7 +181,12 @@ const meters = (a: Stop, b: LiveVehicle) => {
 export function selectNextEligibleArrival(live: LiveTransit, enterMeters = 65) {
   for (const arrival of live.arrivals) {
     const stop = live.targetStops.find((candidate) => candidate.id === arrival.stopId);
-    const vehicle = live.vehicles.find((candidate) => (arrival.vehicleId ? candidate.id === arrival.vehicleId : candidate.tripId === arrival.tripId));
+    // A TripShot prediction can name a vehicle for its *next* block while the
+    // vehicle-position feed still reports its current trip. Do not freeze that
+    // vehicle: selection must join one live position to the exact predicted trip.
+    const vehicle = live.vehicles.find((candidate) =>
+      candidate.tripId === arrival.tripId && (!arrival.vehicleId || candidate.id === arrival.vehicleId),
+    );
     if (stop && vehicle && meters(stop, vehicle) > enterMeters) return { arrival, stop, vehicle };
   }
   return null;
@@ -226,7 +231,10 @@ export async function cacheTripshotStaticGtfs(raw: Buffer) {
 /** Reads the shared live cache but renders only the vehicle/trip frozen into a market. */
 export async function tripshotFrozenTrip(tripId: string, vehicleId: string): Promise<FrozenTripSnapshot> {
   const [value, gtfs] = await Promise.all([live(), staticGtfs()]);
-  const vehicle = value.vehicles.find((candidate) => vehicleId.startsWith("trip:") ? candidate.tripId === tripId : candidate.id === vehicleId) ?? null;
+  // A frozen market never follows the same bus ID onto another trip.
+  const vehicle = value.vehicles.find((candidate) =>
+    candidate.tripId === tripId && (vehicleId.startsWith("trip:") || candidate.id === vehicleId),
+  ) ?? null;
   const trip = gtfs.trips.get(tripId);
   return {
     vehicle,
